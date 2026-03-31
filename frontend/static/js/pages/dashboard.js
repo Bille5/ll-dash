@@ -79,7 +79,49 @@ async function dashboard() {
       </div>`;
   }
 
-  // ── Our stats ───────────────────────────────────────────────
+  // ── Most recent match banner ────────────────────────────────
+  let lastMatchHtml = '';
+  if (played.length) {
+    const last = played[played.length - 1]; // most recently played match
+    const won  = weWon(last);
+    const isTie = last.redWins===false && last.blueWins===false;
+    const oS   = ourS(last);
+    const opS  = oppS(last);
+    const oAuto= ourAuto(last);
+    const oppAuto = ourA(last)==='Red'?(last.scoreBlueAuto||0):(last.scoreRedAuto||0);
+    const resultLabel = won ? 'WIN' : isTie ? 'TIE' : 'LOSS';
+    const resultColor = won ? 'var(--green)' : isTie ? 'var(--yellow)' : 'var(--red)';
+    const alliance    = ourA(last);
+    const allies  = last.teams.filter(t=>t.teamNumber!=TEAM_NUMBER&&t.station?.startsWith(alliance));
+    const opps    = last.teams.filter(t=>!t.station?.startsWith(alliance));
+    const red  = last.teams.filter(t=>t.station?.startsWith('Red'));
+    const blue = last.teams.filter(t=>t.station?.startsWith('Blue'));
+
+    lastMatchHtml = `
+      <div class="card" style="margin-bottom:.75rem;border-left:3px solid ${resultColor}">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
+          <span style="font-size:.62rem;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:.08em">Last Match — Q${last.matchNumber}</span>
+          <span style="font-family:var(--mono);font-size:.95rem;font-weight:800;color:${resultColor}">${resultLabel}</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:center;gap:.5rem;margin-bottom:.45rem">
+          <div style="font-family:var(--mono);font-size:2rem;font-weight:800;color:${resultColor};line-height:1">${oS}</div>
+          <div style="font-family:var(--mono);font-size:1rem;color:var(--text3)">–</div>
+          <div style="font-family:var(--mono);font-size:2rem;font-weight:800;color:var(--text2);line-height:1">${opS}</div>
+        </div>
+        <div style="display:flex;gap:.4rem;justify-content:center;flex-wrap:wrap;margin-bottom:.35rem">
+          ${red.map(t=>teamChipNamed(t,'red')).join('')}
+          <span style="color:var(--text3);align-self:center;font-size:.75rem">vs</span>
+          ${blue.map(t=>teamChipNamed(t,'blue')).join('')}
+        </div>
+        <div style="display:flex;gap:.5rem;justify-content:center;flex-wrap:wrap;font-size:.65rem;font-family:var(--mono);color:var(--text3)">
+          <span>Auto ${oS>0?oAuto:'–'} vs ${oppAuto||'–'}</span>
+          <span>${alliance} Alliance</span>
+          ${last.scoreRedFoul||last.scoreBlueFoul?`<span>Fouls R:${last.scoreRedFoul||0} B:${last.scoreBlueFoul||0}</span>`:''}
+        </div>
+      </div>`;
+  }
+
+
   const statsHtml = ourRank ? `
     <div class="card">
       <div class="card-header">
@@ -112,7 +154,7 @@ async function dashboard() {
       const red  = m.teams.filter(t=>t.station?.startsWith('Red'));
       const blue = m.teams.filter(t=>t.station?.startsWith('Blue'));
       const won  = weWon(m);
-      const oS=ourS(m), opS=oppScore(m)||oppS(m), oAuto=ourAuto(m);
+      const oS=ourS(m), opS=oppS(m), oAuto=ourAuto(m);
       const oppAuto = ourA(m)==='Red'?(m.scoreBlueAuto||0):(m.scoreRedAuto||0);
       return `
         <div class="match-detail-row our-match" onclick="openMatchDetail(${m.matchNumber})" style="cursor:pointer">
@@ -170,6 +212,7 @@ async function dashboard() {
       <button class="icon-btn" onclick="dashboard()" title="Reload">↻</button>
     </div>
     <div style="font-size:.73rem;font-family:var(--mono);color:var(--text2);margin-bottom:.75rem">${appSettings.active_event_name||'No Event'}</div>
+    ${lastMatchHtml}
     ${cdHtml}
     ${statsHtml}
     ${recentHtml}

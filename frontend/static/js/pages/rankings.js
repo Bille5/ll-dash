@@ -86,41 +86,47 @@ async function openTeamModal(teamNum) {
   const highScore = scores.length?Math.max(...scores.map(s=>s.total)):null;
   const avg       = f=>notes.length?(notes.reduce((a,n)=>a+(n[f]||0),0)/notes.length).toFixed(1):'--';
 
-  // FTCScout quick stats block — handle both possible response shapes
+  // FTCScout quick stats block
+  // API response shape: {season, number, tot:{value,rank}, auto:{value,rank}, dc:{value,rank}, eg:{value,rank}, count}
   let ftcHtml = '';
   if (ftcData && (ftcData.tot || ftcData.totalNp)) {
-    // API may return {tot:{value,rank,percentile}, auto:{...}, dc:{...}, eg:{...}}
-    // OR it might use different key names — handle defensively
     const qs = ftcData;
     const totVal  = qs.tot?.value  ?? qs.totalNp?.value;
     const autoVal = qs.auto?.value ?? qs.autonomousNp?.value;
     const dcVal   = qs.dc?.value   ?? qs.teleop?.value   ?? qs.driverControlled?.value;
     const egVal   = qs.eg?.value   ?? qs.endgame?.value;
     const totRank = qs.tot?.rank   ?? qs.totalNp?.rank;
-    const totPct  = qs.tot?.percentile ?? qs.totalNp?.percentile;
+    const autoRank= qs.auto?.rank;
+    const dcRank  = qs.dc?.rank;
+    const egRank  = qs.eg?.rank;
+    const count   = qs.count; // total TEPs used in global stats calculation
     const fmt = v => v!=null ? v.toFixed(2) : '--';
-    const fmtPct = v => v!=null ? v.toFixed(1) : '?';
+    const fmtRank = r => r!=null ? `#${r}` : '';
     ftcHtml=`
       <div style="margin-bottom:1rem;padding:.75rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs)">
-        <div style="font-size:.62rem;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.5rem">FTCScout Season Stats ${season}–${String(parseInt(season)+1).slice(-2)}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+          <div style="font-size:.62rem;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:.08em">FTCScout OPR Stats ${season}–${String(parseInt(season)+1).slice(-2)}</div>
+          ${count?`<div style="font-size:.6rem;font-family:var(--mono);color:var(--text3)">${count.toLocaleString()} events</div>`:''}
+        </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem">
           ${[
-            ['Total npOPR', fmt(totVal)],
-            ['Auto OPR',    fmt(autoVal)],
-            ['Teleop OPR',  fmt(dcVal)],
-            ['Endgame OPR', fmt(egVal)],
-          ].map(([l,v])=>`
+            ['Total npOPR', fmt(totVal),  fmtRank(totRank)],
+            ['Auto OPR',    fmt(autoVal), fmtRank(autoRank)],
+            ['Teleop OPR',  fmt(dcVal),   fmtRank(dcRank)],
+            ['Endgame OPR', fmt(egVal),   fmtRank(egRank)],
+          ].map(([l,v,r])=>`
           <div style="background:var(--bg2);border-radius:6px;padding:.35rem .5rem">
-            <div style="font-family:var(--mono);font-size:.88rem;font-weight:700;color:var(--accent2)">${v}</div>
+            <div style="display:flex;align-items:baseline;gap:.3rem">
+              <div style="font-family:var(--mono);font-size:.88rem;font-weight:700;color:var(--accent2)">${v}</div>
+              ${r?`<div style="font-family:var(--mono);font-size:.6rem;color:var(--text3)">${r}</div>`:''}
+            </div>
             <div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">${l}</div>
           </div>`).join('')}
         </div>
-        ${totRank?`<div style="font-size:.65rem;font-family:var(--mono);color:var(--text2);margin-top:.4rem">
-          World rank: #${totRank} (${fmtPct(totPct)}%ile) · <a href="https://ftcscout.org/teams/${teamNum}" target="_blank" style="color:var(--accent2)">FTCScout ↗</a>
-        </div>`:
-        `<div style="font-size:.65rem;font-family:var(--mono);color:var(--text2);margin-top:.4rem">
-          <a href="https://ftcscout.org/teams/${teamNum}" target="_blank" style="color:var(--accent2)">View full stats on FTCScout ↗</a>
-        </div>`}
+        <div style="font-size:.65rem;font-family:var(--mono);color:var(--text2);margin-top:.4rem">
+          ${totRank?`World rank #${totRank} by npOPR · `:''}
+          <a href="https://ftcscout.org/teams/${teamNum}" target="_blank" style="color:var(--accent2)">FTCScout ↗</a>
+        </div>
       </div>`;
   }
 
@@ -136,51 +142,69 @@ async function openTeamModal(teamNum) {
     </div>`;
   }).join('');
 
-  const noteHtml = notes.length?notes.map(n=>`
+  const noteHtml = notes.length?notes.map(n=>{
+    const sections = parseScoutNotes(n);
+    return `
     <div style="border-top:1px solid var(--border);padding:.55rem 0">
-      <div style="display:flex;justify-content:space-between;margin-bottom:.2rem">
+      <div style="display:flex;justify-content:space-between;margin-bottom:.3rem">
         <span style="font-size:.7rem;color:var(--text2);font-family:var(--mono)">${n.scout_name}${n.match_number?' · Q'+n.match_number:''}</span>
         ${n.driver_rating?`<span style="color:var(--accent);font-size:.75rem">${'★'.repeat(n.driver_rating)}</span>`:''}
       </div>
-      ${n.auto_description?`<div style="font-size:.73rem;color:var(--text2)">Auto: ${n.auto_description}</div>`:''}
-      ${n.endgame_description?`<div style="font-size:.73rem;color:var(--text2)">End: ${n.endgame_description}</div>`:''}
-      <div style="font-size:.82rem;margin-top:.15rem">${n.notes||'<span style="color:var(--text3)">—</span>'}</div>
-    </div>`).join('')
+      ${n.auto_score!=null||n.teleop_score!=null||n.endgame_score!=null?`
+      <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.3rem">
+        ${n.auto_score!=null?`<span style="background:var(--bg3);padding:1px 5px;border-radius:3px;font-size:.67rem;font-family:var(--mono);color:var(--text2)">Auto ${n.auto_score}</span>`:''}
+        ${n.teleop_score!=null?`<span style="background:var(--bg3);padding:1px 5px;border-radius:3px;font-size:.67rem;font-family:var(--mono);color:var(--text2)">Teleop ${n.teleop_score}</span>`:''}
+        ${n.endgame_score!=null?`<span style="background:var(--bg3);padding:1px 5px;border-radius:3px;font-size:.67rem;font-family:var(--mono);color:var(--text2)">End ${n.endgame_score}</span>`:''}
+      </div>`:''}
+      ${renderNoteSections(n)}
+    </div>`}).join('')
     : '<div style="color:var(--text3);font-size:.82rem;padding:.5rem 0">No scouting notes yet.</div>';
 
-  // Load season history from FTCScout
+  // Load season history from FTCScout (stats) enriched with official FTC event names
   const historyData = await API.ftcscoutTeamEvents(teamNum, season).catch(()=>null);
 
   // Build season history HTML
   let historyHtml = '';
   if (Array.isArray(historyData) && historyData.length) {
-    const events = historyData.sort((a,b)=>new Date(a.event?.start||0)-new Date(b.event?.start||0));
+    // Sort by official FTC event start date (enriched by backend)
+    const events = [...historyData].sort((a,b)=>new Date(a.eventDate||0)-new Date(b.eventDate||0));
     historyHtml = `
       <div style="margin-bottom:1rem">
         <div class="form-label" style="margin-bottom:.4rem">Season History ${season}–${String(parseInt(season)+1).slice(-2)}</div>
         ${events.map(ep => {
-          const ev = ep.event || ep;
-          const evName = ev.name || ev.eventName || ep.eventCode || '?';
-          const evDate = ev.start ? new Date(ev.start).toLocaleDateString([],{month:'short',day:'numeric'}) : '';
-          const evCode = ev.code || ep.eventCode || '';
-          const rank   = ep.rank || ep.qualRank;
-          const wlt    = (ep.wins!=null) ? `${ep.wins}W-${ep.losses}L${ep.ties?'-'+ep.ties+'T':''}` : '';
-          const rp     = ep.rp?.toFixed(2) || ep.rankingPoints?.toFixed(2) || '';
-          const npOpr  = ep.stats?.tot?.value?.toFixed(1) || ep.npOpr?.toFixed(1) || '';
+          // eventName/eventDate/eventCity/eventState are enriched by the backend from official FTC API
+          const evName  = ep.eventName  || ep.eventCode || '?';
+          const evCode  = ep.eventCode  || '';
+          const evDate  = ep.eventDate  ? new Date(ep.eventDate).toLocaleDateString([],{month:'short',day:'numeric'}) : '';
+          const evLoc   = [ep.eventCity, ep.eventState].filter(Boolean).join(', ');
+          const evType  = ep.eventType  || '';
+          // Stats are nested under ep.stats (FTCScout TeamEventParticipation schema)
+          const stats   = ep.stats || {};
+          const rank    = stats.rank;
+          const wins    = stats.wins    ?? null;
+          const losses  = stats.losses  ?? null;
+          const ties    = stats.ties    ?? null;
+          const rp      = stats.rp;
+          const npOpr   = stats.tot?.value;
+          const played  = stats.qualMatchesPlayed;
+          const wlt     = wins!=null ? `${wins}W-${losses}L${ties?'-'+ties+'T':''}` : '';
           return `
             <div style="padding:.5rem .6rem;margin-bottom:.35rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs)">
               <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem">
                 <div style="flex:1">
                   <div style="font-size:.82rem;font-weight:600">${evName}</div>
-                  <div style="font-size:.67rem;font-family:var(--mono);color:var(--text2);margin-top:1px">${evDate}${evCode?' · '+evCode:''}</div>
+                  <div style="font-size:.67rem;font-family:var(--mono);color:var(--text2);margin-top:1px">
+                    ${evDate}${evLoc?' · '+evLoc:''}${evCode?' · '+evCode:''}${evType?' · '+evType:''}
+                  </div>
                 </div>
-                ${rank?`<div style="text-align:right;font-family:var(--mono);font-size:.72rem;color:var(--accent)">#${rank}</div>`:''}
+                ${rank!=null?`<div style="text-align:right;font-family:var(--mono);font-size:.72rem;color:var(--accent)">#${rank}</div>`:''}
               </div>
-              ${(wlt||rp||npOpr)?`<div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.3rem">
+              <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.3rem">
                 ${wlt?`<span style="background:var(--bg2);padding:1px 5px;border-radius:3px;font-size:.68rem;font-family:var(--mono);color:var(--text2)">${wlt}</span>`:''}
-                ${rp?`<span style="background:var(--bg2);padding:1px 5px;border-radius:3px;font-size:.68rem;font-family:var(--mono);color:var(--text2)">RP ${rp}</span>`:''}
-                ${npOpr?`<span style="background:var(--bg2);padding:1px 5px;border-radius:3px;font-size:.68rem;font-family:var(--mono);color:var(--accent2)">npOPR ${npOpr}</span>`:''}
-              </div>`:''}
+                ${played!=null?`<span style="background:var(--bg2);padding:1px 5px;border-radius:3px;font-size:.68rem;font-family:var(--mono);color:var(--text2)">${played} matches</span>`:''}
+                ${rp!=null?`<span style="background:var(--bg2);padding:1px 5px;border-radius:3px;font-size:.68rem;font-family:var(--mono);color:var(--text2)">RP ${rp.toFixed(2)}/match</span>`:''}
+                ${npOpr!=null?`<span style="background:var(--bg2);padding:1px 5px;border-radius:3px;font-size:.68rem;font-family:var(--mono);color:var(--accent2)">npOPR ${npOpr.toFixed(1)}</span>`:''}
+              </div>
             </div>`;
         }).join('')}
       </div>`;

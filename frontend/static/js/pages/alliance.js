@@ -51,7 +51,7 @@ async function alliance() {
       scoutAvgAuto:   avg(ns,'auto_score'),
       scoutAvgTeleop: avg(ns,'teleop_score'),
       scoutAvgEnd:    avg(ns,'endgame_score'),
-      notes: ns.length, flag,
+      notes: ns.length, notesList: ns, flag,
     };
   });
 
@@ -76,16 +76,33 @@ function renderPickList(teams) {
 
   const teamRow = t => {
     const icon = t.flag==='target'?'🎯':t.flag==='dnp'?'🚫':'';
+    // Show latest scouting note preview under the team row
+    let notePreview = '';
+    if (t.notesList && t.notesList.length) {
+      const latest = t.notesList[0];
+      const s = parseScoutNotes(latest);
+      const parts = [];
+      if (s.auto)   parts.push(`Auto: ${escHtml(s.auto)}`);
+      if (s.teleop) parts.push(`Teleop: ${escHtml(s.teleop)}`);
+      if (s.park)   parts.push(`Park: ${escHtml(s.park)}`);
+      if (s.other)  parts.push(escHtml(s.other));
+      if (!parts.length && latest.notes) parts.push(escHtml(latest.notes));
+      if (parts.length) {
+        const preview = parts.join(' · ');
+        notePreview = `<div style="font-size:.64rem;color:var(--text2);margin-top:.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${preview.length>130?preview.slice(0,130)+'…':preview}</div>`;
+      }
+    }
     return `
       <div class="match-row ${t.num==TEAM_NUMBER?'our-match':''}" onclick="openTeamModal(${t.num})">
         <div class="match-num">#${t.rank}</div>
-        <div style="flex:1">
+        <div style="flex:1;min-width:0">
           <div style="font-weight:700;font-size:.85rem">${icon} ${t.num} <span style="color:var(--text2);font-weight:400;font-size:.75rem">${t.name}</span></div>
           <div style="font-size:.67rem;font-family:var(--mono);color:var(--text2)">
             ${t.wins}W · RP ${t.rp?.toFixed(3)||'--'} · Avg ${t.avgScore??'--'} · Auto ${t.avgAuto??'--'}${t.notes?' · '+t.notes+' notes':''}
           </div>
+          ${notePreview}
         </div>
-        <div style="display:flex;gap:.3rem;flex-direction:column;align-items:flex-end">
+        <div style="display:flex;gap:.3rem;flex-direction:column;align-items:flex-end;flex-shrink:0">
           <button class="flag-btn target btn-sm ${t.flag==='target'?'active':''}" data-flag="target" data-team="${t.num}" style="flex:unset;padding:.2rem .4rem" onclick="event.stopPropagation()">🎯</button>
           <button class="flag-btn dnp btn-sm ${t.flag==='dnp'?'active':''}" data-flag="dnp" data-team="${t.num}" style="flex:unset;padding:.2rem .4rem" onclick="event.stopPropagation()">🚫</button>
         </div>
@@ -113,21 +130,41 @@ function renderPickList(teams) {
 
 function renderCompare(teams) {
   let selected = [];
-  const opts = teams.map(t=>`<option value="${t.num}">${t.num} — ${t.name||''} (#${t.rank})</option>`).join('');
   document.getElementById('alliance-content').innerHTML = `
     <div class="card">
-      <div class="form-label">Select up to 3 teams to compare</div>
-      <select class="form-select" id="cmp-sel" style="margin-bottom:.75rem">
-        <option value="">Add a team…</option>${opts}
-      </select>
+      <div class="form-label" style="margin-bottom:.5rem">Search and add up to 3 teams to compare</div>
+      <div class="form-group" style="margin-bottom:.5rem">
+        <input class="form-input" id="cmp-search" placeholder="Type team number or name…" autocomplete="off"/>
+        <div id="cmp-search-results"></div>
+      </div>
       <div id="cmp-chips" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.75rem"></div>
       <div id="cmp-grid" style="display:flex;gap:.5rem;overflow-x:auto"></div>
     </div>`;
 
-  document.getElementById('cmp-sel').addEventListener('change', e => {
-    const num=parseInt(e.target.value);
-    if (!num||selected.includes(num)||selected.length>=3){e.target.value='';return;}
-    selected.push(num); e.target.value='';
+  const searchEl = document.getElementById('cmp-search');
+  const resultsEl = document.getElementById('cmp-search-results');
+
+  searchEl.addEventListener('input', () => {
+    const q = searchEl.value.trim().toLowerCase();
+    if (!q) { resultsEl.innerHTML = ''; return; }
+    const hits = teams
+      .filter(t => String(t.num).includes(q) || t.name.toLowerCase().includes(q))
+      .slice(0, 8);
+    resultsEl.innerHTML = hits.map(t => `
+      <div class="team-search-result" data-num="${t.num}">
+        <div><span class="t-num">${t.num}</span> <span class="t-name">${t.name}</span></div>
+        <div style="font-size:.65rem;font-family:var(--mono);color:var(--text3)">#${t.rank} · ${t.wins}W-${t.losses}L · RP ${t.rp?.toFixed(3)||'--'}</div>
+      </div>`).join('') || '<div style="color:var(--text3);font-size:.82rem;padding:.5rem">No results</div>';
+  });
+
+  resultsEl.addEventListener('click', e => {
+    const row = e.target.closest('.team-search-result'); if (!row) return;
+    const num = parseInt(row.dataset.num);
+    if (!num || selected.includes(num) || selected.length >= 3) {
+      searchEl.value = ''; resultsEl.innerHTML = ''; return;
+    }
+    selected.push(num);
+    searchEl.value = ''; resultsEl.innerHTML = '';
     buildCmpGrid(teams, selected);
   });
 
@@ -150,8 +187,16 @@ function renderCompare(teams) {
         const b = best(metric, teams.filter(x=>sel.includes(x.num)));
         return val>=b ? 'var(--green)' : 'var(--accent2)';
       };
+      // Build scout notes summary for compare column
+      let scoutSummary = '';
+      if (t.notesList && t.notesList.length) {
+        const latest = t.notesList[0];
+        const s = parseScoutNotes(latest);
+        const parts = [s.auto&&`A:${escHtml(s.auto)}`, s.teleop&&`T:${escHtml(s.teleop)}`, s.park&&`P:${escHtml(s.park)}`].filter(Boolean);
+        if (parts.length) scoutSummary = `<div style="font-size:.58rem;color:var(--text2);margin-top:.3rem;white-space:pre-wrap;text-align:left">${parts.join('\n').slice(0,80)}</div>`;
+      }
       return `
-        <div class="compare-col" style="min-width:100px;cursor:pointer" onclick="openTeamModal(${t.num})">
+        <div class="compare-col" style="min-width:105px;cursor:pointer" onclick="openTeamModal(${t.num})">
           <div class="compare-team-num">${t.num}</div>
           <div class="compare-team-name">#${t.rank} · ${t.name}</div>
           <div class="compare-stat"><div class="compare-stat-val" style="color:${highlight(t.rp,'rp')}">${t.rp?.toFixed(3)||'--'}</div><div class="compare-stat-lbl">RP Avg</div></div>
@@ -160,6 +205,7 @@ function renderCompare(teams) {
           <div class="compare-stat"><div class="compare-stat-val">${t.highScore??'--'}</div><div class="compare-stat-lbl">High Score</div></div>
           <div class="compare-stat"><div class="compare-stat-val">${t.wins}-${t.losses}</div><div class="compare-stat-lbl">W-L</div></div>
           <div class="compare-stat"><div class="compare-stat-val">${t.notes}</div><div class="compare-stat-lbl">Scout Notes</div></div>
+          ${scoutSummary}
           <div class="flag-row" style="margin-top:.75rem">
             <button class="flag-btn target btn-sm ${t.flag==='target'?'active':''}" data-flag="target" data-team="${t.num}" onclick="event.stopPropagation()">🎯</button>
             <button class="flag-btn dnp btn-sm ${t.flag==='dnp'?'active':''}" data-flag="dnp" data-team="${t.num}" onclick="event.stopPropagation()">🚫</button>
