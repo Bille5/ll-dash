@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: ll-dash
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn "app:create_app()" --bind 0.0.0.0:$PORT --workers 2
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: SECRET_KEY
+        generateValue: true
+      - key: TEAM_NUMBER
+        value: "3650"
+      - key: TEAM_PIN
+        sync: false
+      - key: FTC_API_USERNAME
+        sync: false
+      - key: FTC_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ll-dash-db
+          property: connectionString
+
+databases:
+  - name: ll-dash-db
+    plan: free
