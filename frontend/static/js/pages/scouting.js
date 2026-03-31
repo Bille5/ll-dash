@@ -248,7 +248,7 @@ async function renderScoutNotes() {
   // Group by team
   const byTeam={};
   notes.forEach(n=>{if(!byTeam[n.team_number])byTeam[n.team_number]=[];byTeam[n.team_number].push(n);});
-  const avg=(arr,f)=>arr.filter(n=>n[f]!=null).length?(arr.reduce((a,n)=>a+(n[f]||0),0)/arr.filter(n=>n[f]!=null).length).toFixed(1):'--';
+  const avg=(arr,f)=>{const valid=arr.filter(n=>n[f]!=null);return valid.length?(valid.reduce((a,n)=>a+(n[f]||0),0)/valid.length).toFixed(1):'--';};
 
   document.getElementById('scout-content').innerHTML=Object.entries(byTeam).sort((a,b)=>a[0]-b[0]).map(([team,ns])=>{
     const rank=rankings.find(r=>r.teamNumber==team);

@@ -88,18 +88,24 @@ async function simulator() {
       ? `✓ Projected to Advance (Top ${p.advSlots})`
       : `✗ Outside Cutoff — Need More RP`;
 
+    // Helper: format alliance/opponent teams for a match row
+    const allianceInfo = m => {
+      const ourAlliance = m.teams.find(t=>t.teamNumber==TEAM_NUMBER)?.station?.startsWith('Red')?'Red':'Blue';
+      const allies = m.teams.filter(t=>t.teamNumber!=TEAM_NUMBER&&t.station?.startsWith(ourAlliance));
+      const opps   = m.teams.filter(t=>!t.station?.startsWith(ourAlliance));
+      return `${ourAlliance} · w/ ${allies.map(t=>t.teamNumber).join(', ')||'?'} vs ${opps.map(t=>t.teamNumber).join(', ')||'?'}`;
+    };
+
     // ── Full schedule: played rows first, then unplayed ──
     const allMatchRows = ourMatches.map(m => {
-      const ourA  = m.teams.find(t=>t.teamNumber==TEAM_NUMBER)?.station?.startsWith('Red')?'Red':'Blue';
-      const allies= m.teams.filter(t=>t.teamNumber!=TEAM_NUMBER&&t.station?.startsWith(ourA));
-      const opps  = m.teams.filter(t=>!t.station?.startsWith(ourA));
       const isPlayed = m.scoreRedFinal !== null;
 
       if (isPlayed) {
         // Played match row — show actual result
-        const ourScore  = ourA==='Red'?m.scoreRedFinal:m.scoreBlueFinal;
-        const oppScore  = ourA==='Red'?m.scoreBlueFinal:m.scoreRedFinal;
-        const won       = ourA==='Red'?m.redWins:m.blueWins;
+        const ourAlliance = m.teams.find(t=>t.teamNumber==TEAM_NUMBER)?.station?.startsWith('Red')?'Red':'Blue';
+        const ourScore  = ourAlliance==='Red'?m.scoreRedFinal:m.scoreBlueFinal;
+        const oppScore  = ourAlliance==='Red'?m.scoreBlueFinal:m.scoreRedFinal;
+        const won       = ourAlliance==='Red'?m.redWins:m.blueWins;
         const isTie     = m.redWins===false && m.blueWins===false;
         const actualRP  = playedRPMap[m.matchNumber] ?? (won?2:isTie?1:0);
         const resultLbl = won ? 'W' : isTie ? 'T' : 'L';
@@ -108,9 +114,7 @@ async function simulator() {
           <div class="sim-match-row" style="opacity:.75">
             <div style="display:flex;align-items:center;gap:.5rem">
               <span style="font-family:var(--mono);font-weight:700;font-size:.82rem;min-width:32px">Q${m.matchNumber}</span>
-              <div style="flex:1;font-size:.68rem;font-family:var(--mono);color:var(--text2)">
-                ${ourA} · w/ ${allies.map(t=>t.teamNumber).join(', ')||'?'} vs ${opps.map(t=>t.teamNumber).join(', ')||'?'}
-              </div>
+              <div style="flex:1;font-size:.68rem;font-family:var(--mono);color:var(--text2)">${allianceInfo(m)}</div>
               <div style="text-align:right">
                 <div style="font-family:var(--mono);font-size:.8rem;font-weight:700;color:${resultClr}">${resultLbl} ${ourScore}–${oppScore}</div>
                 <div style="font-family:var(--mono);font-size:.65rem;color:var(--text2)">+${actualRP} RP</div>
@@ -122,15 +126,13 @@ async function simulator() {
         const s   = sim[m.matchNumber];
         const rp  = s.rp;
         const rpColor = rp>=4?'var(--accent)':rp>=2?'var(--green)':rp===1?'var(--yellow)':'var(--red)';
-        const rpLabel = rp===0?'Loss':rp===1?'Tie':rp===2?'Win':rp<=4?`Win +${rp-2} bonus`:`Win +${rp-2} bonus`;
+        const rpLabel = rp===0?'Loss':rp===1?'Tie':rp===2?'Win':`Win +${rp-2} bonus`;
         return `
           <div class="sim-match-row">
             <div style="display:flex;align-items:center;gap:.5rem">
               <span style="font-family:var(--mono);font-weight:700;font-size:.82rem;min-width:32px">Q${m.matchNumber}</span>
               <div style="flex:1">
-                <div style="font-size:.68rem;font-family:var(--mono);color:var(--text2)">
-                  ${ourA} · w/ ${allies.map(t=>t.teamNumber).join(', ')||'?'} vs ${opps.map(t=>t.teamNumber).join(', ')||'?'}
-                </div>
+                <div style="font-size:.68rem;font-family:var(--mono);color:var(--text2)">${allianceInfo(m)}</div>
                 <div style="font-size:.63rem;color:var(--text3);font-family:var(--mono)">${formatTime(m.startTime)}</div>
               </div>
               <div class="rp-stepper" data-match="${m.matchNumber}">

@@ -82,11 +82,11 @@ function renderPickList(teams) {
       const latest = t.notesList[0];
       const s = parseScoutNotes(latest);
       const parts = [];
-      if (s.auto)   parts.push(`Auto: ${s.auto}`);
-      if (s.teleop) parts.push(`Teleop: ${s.teleop}`);
-      if (s.park)   parts.push(`Park: ${s.park}`);
-      if (s.other)  parts.push(s.other);
-      if (!parts.length && latest.notes) parts.push(latest.notes);
+      if (s.auto)   parts.push(`Auto: ${escHtml(s.auto)}`);
+      if (s.teleop) parts.push(`Teleop: ${escHtml(s.teleop)}`);
+      if (s.park)   parts.push(`Park: ${escHtml(s.park)}`);
+      if (s.other)  parts.push(escHtml(s.other));
+      if (!parts.length && latest.notes) parts.push(escHtml(latest.notes));
       if (parts.length) {
         const preview = parts.join(' · ');
         notePreview = `<div style="font-size:.64rem;color:var(--text2);margin-top:.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${preview.length>130?preview.slice(0,130)+'…':preview}</div>`;
@@ -192,7 +192,7 @@ function renderCompare(teams) {
       if (t.notesList && t.notesList.length) {
         const latest = t.notesList[0];
         const s = parseScoutNotes(latest);
-        const parts = [s.auto&&`A:${s.auto}`, s.teleop&&`T:${s.teleop}`, s.park&&`P:${s.park}`].filter(Boolean);
+        const parts = [s.auto&&`A:${escHtml(s.auto)}`, s.teleop&&`T:${escHtml(s.teleop)}`, s.park&&`P:${escHtml(s.park)}`].filter(Boolean);
         if (parts.length) scoutSummary = `<div style="font-size:.58rem;color:var(--text2);margin-top:.3rem;white-space:pre-wrap;text-align:left">${parts.join('\n').slice(0,80)}</div>`;
       }
       return `
