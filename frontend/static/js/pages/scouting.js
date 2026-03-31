@@ -11,6 +11,38 @@ function _scoutBroadcast() { _scoutCh?.postMessage('reload'); }
 
 window._teamNames = window._teamNames || {};
 
+// ── Parse structured scouting notes (JSON v2 or legacy plain text) ──
+function parseScoutNotes(n) {
+  if (n.notes) {
+    try {
+      const j = JSON.parse(n.notes);
+      if (j && typeof j === 'object' && !Array.isArray(j)) return j;
+    } catch(e) {}
+  }
+  // Legacy format: build from old separate fields
+  const result = {};
+  if (n.auto_description) result.auto  = n.auto_description;
+  if (n.endgame_description) result.park = n.endgame_description;
+  if (n.notes) result.other = n.notes;
+  return result;
+}
+
+// Render one note's text sections as HTML
+function renderNoteSections(n) {
+  const s = parseScoutNotes(n);
+  const rows = [
+    s.auto   && `<div class="note-section"><span class="note-section-label">Auto</span>${escHtml(s.auto)}</div>`,
+    s.teleop  && `<div class="note-section"><span class="note-section-label">Teleop</span>${escHtml(s.teleop)}</div>`,
+    s.park   && `<div class="note-section"><span class="note-section-label">Park</span>${escHtml(s.park)}</div>`,
+    s.other  && `<div class="note-section"><span class="note-section-label">Notes</span>${escHtml(s.other)}</div>`,
+  ].filter(Boolean);
+  return rows.join('') || '<span style="color:var(--text3)">—</span>';
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+
 async function scouting() {
   if (!appSettings.active_event_code) { noEventPage(); return; }
   renderPage(`
@@ -74,19 +106,40 @@ async function renderScoutForm() {
         <label class="form-label">Driver Rating</label>
         <div class="star-rating" id="sc-stars">${[1,2,3,4,5].map(v=>`<span class="star" data-v="${v}">★</span>`).join('')}</div>
       </div>
-      <div class="form-row">
-        <div class="form-group"><label class="form-label">Auto Score</label><input class="form-input" id="sc-auto" type="number" inputmode="numeric" placeholder="0"/></div>
-        <div class="form-group"><label class="form-label">TeleOp Score</label><input class="form-input" id="sc-teleop" type="number" inputmode="numeric" placeholder="0"/></div>
+
+      <div style="border-top:1px solid var(--border);padding-top:.75rem;margin-bottom:.25rem">
+        <div class="form-label" style="margin-bottom:.6rem;color:var(--accent2)">Match Observations</div>
+
+        <div class="form-group">
+          <label class="form-label">🤖 Auto Notes</label>
+          <textarea class="form-textarea" id="sc-auto-notes" placeholder="What did they do in autonomous? Specimens scored, samples moved, left zone, consistency…"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">🎮 Teleop Notes</label>
+          <textarea class="form-textarea" id="sc-teleop-notes" placeholder="Teleop observations — cycle speed, scoring zones, defense, driver skill…"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">🅿️ Park / Endgame Notes</label>
+          <textarea class="form-textarea" id="sc-park-notes" placeholder="Did they hang (level 1/2/3)? Park? Nothing? Was it consistent?"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">📋 Other Notes</label>
+          <textarea class="form-textarea" id="sc-other-notes" placeholder="Strengths, weaknesses, alliance strategy tips, notable moments…"></textarea>
+        </div>
       </div>
-      <div class="form-row">
-        <div class="form-group"><label class="form-label">Endgame Score</label><input class="form-input" id="sc-endgame" type="number" inputmode="numeric" placeholder="0"/></div>
-        <div class="form-group"><label class="form-label">Penalties</label><input class="form-input" id="sc-penalties" type="number" inputmode="numeric" placeholder="0"/></div>
+
+      <div style="border-top:1px solid var(--border);padding-top:.75rem;margin-bottom:.25rem">
+        <div class="form-label" style="margin-bottom:.6rem;color:var(--text3)">Score Breakdown (optional)</div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Auto Score</label><input class="form-input" id="sc-auto" type="number" inputmode="numeric" placeholder="0"/></div>
+          <div class="form-group"><label class="form-label">TeleOp Score</label><input class="form-input" id="sc-teleop" type="number" inputmode="numeric" placeholder="0"/></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Endgame Score</label><input class="form-input" id="sc-endgame" type="number" inputmode="numeric" placeholder="0"/></div>
+          <div class="form-group"><label class="form-label">Penalties</label><input class="form-input" id="sc-penalties" type="number" inputmode="numeric" placeholder="0"/></div>
+        </div>
       </div>
-      <div class="form-group"><label class="form-label">Auto Description</label><input class="form-input" id="sc-auto-desc" placeholder="What did they score in auto?"/></div>
-      <div class="form-group"><label class="form-label">Endgame Description</label><input class="form-input" id="sc-end-desc" placeholder="Level 3 hang? Park? Nothing?"/></div>
-      <div class="form-group"><label class="form-label">Strengths</label><input class="form-input" id="sc-strengths" placeholder="Fast auto, consistent hang, good defense…"/></div>
-      <div class="form-group"><label class="form-label">Weaknesses</label><input class="form-input" id="sc-weaknesses" placeholder="Slow teleop, fragile intake, no endgame…"/></div>
-      <div class="form-group"><label class="form-label">Notes</label><textarea class="form-textarea" id="sc-notes" placeholder="Full observations, match strategy tips…"></textarea></div>
+
       <div class="form-group">
         <label class="form-label">Alliance Flag</label>
         <div class="flag-row" id="sc-flag-row">
@@ -146,11 +199,16 @@ async function renderScoutForm() {
     const scoutName=document.getElementById('sc-name').value.trim()||'Anonymous';
     localStorage.setItem('scout_name',scoutName);
 
-    const strengths=document.getElementById('sc-strengths').value.trim();
-    const weaknesses=document.getElementById('sc-weaknesses').value.trim();
-    let combined=document.getElementById('sc-notes').value.trim();
-    if (strengths) combined=(combined?combined+'\n':'')+'✓ '+strengths;
-    if (weaknesses) combined=(combined?combined+'\n':'')+'✗ '+weaknesses;
+    // Build structured notes JSON from the 4 sections
+    const noteData = {};
+    const autoNotes  = document.getElementById('sc-auto-notes').value.trim();
+    const teleopNotes= document.getElementById('sc-teleop-notes').value.trim();
+    const parkNotes  = document.getElementById('sc-park-notes').value.trim();
+    const otherNotes = document.getElementById('sc-other-notes').value.trim();
+    if (autoNotes)   noteData.auto   = autoNotes;
+    if (teleopNotes) noteData.teleop = teleopNotes;
+    if (parkNotes)   noteData.park   = parkNotes;
+    if (otherNotes)  noteData.other  = otherNotes;
 
     try {
       await API.addScouting({
@@ -161,14 +219,14 @@ async function renderScoutForm() {
         endgame_score:parseInt(document.getElementById('sc-endgame').value)||null,
         penalties:parseInt(document.getElementById('sc-penalties').value)||0,
         driver_rating:driverRating||null,
-        auto_description:document.getElementById('sc-auto-desc').value||null,
-        endgame_description:document.getElementById('sc-end-desc').value||null,
-        notes:combined||null,
+        notes:Object.keys(noteData).length ? JSON.stringify(noteData) : null,
       });
       if (selectedFlag!=='neutral') await API.setFlag(teamNum,selectedFlag).catch(()=>{});
-      _scoutBroadcast(); // notify other tabs
+      _scoutBroadcast();
       showToast('Note saved! ✓');
-      ['sc-auto','sc-teleop','sc-endgame','sc-penalties','sc-auto-desc','sc-end-desc','sc-strengths','sc-weaknesses','sc-notes','sc-team'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+      ['sc-auto','sc-teleop','sc-endgame','sc-penalties',
+       'sc-auto-notes','sc-teleop-notes','sc-park-notes','sc-other-notes','sc-team'
+      ].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
       document.getElementById('sc-match').selectedIndex=0;
       teamResults.innerHTML=''; teamPreview.style.display='none';
       selectedTeam=null; driverRating=0; selectedFlag='neutral';
@@ -190,11 +248,12 @@ async function renderScoutNotes() {
   // Group by team
   const byTeam={};
   notes.forEach(n=>{if(!byTeam[n.team_number])byTeam[n.team_number]=[];byTeam[n.team_number].push(n);});
-  const avg=(arr,f)=>arr.length?(arr.reduce((a,n)=>a+(n[f]||0),0)/arr.length).toFixed(1):'--';
+  const avg=(arr,f)=>arr.filter(n=>n[f]!=null).length?(arr.reduce((a,n)=>a+(n[f]||0),0)/arr.filter(n=>n[f]!=null).length).toFixed(1):'--';
 
   document.getElementById('scout-content').innerHTML=Object.entries(byTeam).sort((a,b)=>a[0]-b[0]).map(([team,ns])=>{
     const rank=rankings.find(r=>r.teamNumber==team);
     const teamName=rank?.teamName||window._teamNames?.[team]||'';
+    const hasScores = ns.some(n=>n.auto_score!=null||n.teleop_score!=null||n.endgame_score!=null);
     return `
       <div class="card">
         <div class="card-header" style="cursor:pointer" onclick="openTeamModal(${team})">
@@ -207,23 +266,26 @@ async function renderScoutNotes() {
             <div style="font-size:.65rem;color:var(--text2);font-family:var(--mono)">${ns.length} note${ns.length>1?'s':''}</div>
           </div>
         </div>
-        <div class="stat-grid stat-grid-3" style="margin-bottom:.5rem">
-          <div class="stat-box"><div class="stat-value" style="font-size:.95rem">${avg(ns,'auto_score')}</div><div class="stat-label">Auto</div></div>
-          <div class="stat-box"><div class="stat-value" style="font-size:.95rem">${avg(ns,'teleop_score')}</div><div class="stat-label">Teleop</div></div>
-          <div class="stat-box"><div class="stat-value" style="font-size:.95rem">${avg(ns,'endgame_score')}</div><div class="stat-label">Endgame</div></div>
-        </div>
-        ${ns.map(n=>`
+        ${hasScores?`<div class="stat-grid stat-grid-3" style="margin-bottom:.5rem">
+          <div class="stat-box"><div class="stat-value" style="font-size:.95rem">${avg(ns,'auto_score')}</div><div class="stat-label">Avg Auto</div></div>
+          <div class="stat-box"><div class="stat-value" style="font-size:.95rem">${avg(ns,'teleop_score')}</div><div class="stat-label">Avg Teleop</div></div>
+          <div class="stat-box"><div class="stat-value" style="font-size:.95rem">${avg(ns,'endgame_score')}</div><div class="stat-label">Avg End</div></div>
+        </div>`:''}
+        ${ns.map(n=>{
+          const sections = parseScoutNotes(n);
+          const hasNote = sections.auto||sections.teleop||sections.park||sections.other;
+          return `
           <div style="border-top:1px solid var(--border);padding:.55rem 0;display:flex;gap:.5rem">
             <div style="flex:1">
-              <div style="font-size:.7rem;font-family:var(--mono);color:var(--text2);margin-bottom:.2rem">
+              <div style="font-size:.7rem;font-family:var(--mono);color:var(--text2);margin-bottom:.3rem">
                 ${n.scout_name}${n.match_number?' · Q'+n.match_number:''}${n.driver_rating?' · '+'★'.repeat(n.driver_rating):''}
+                ${n.auto_score!=null||n.teleop_score!=null||n.endgame_score!=null?`<span style="margin-left:.3rem;color:var(--text3)">A:${n.auto_score??'?'} T:${n.teleop_score??'?'} E:${n.endgame_score??'?'}</span>`:''}
               </div>
-              ${n.auto_description?`<div style="font-size:.72rem;color:var(--accent2)">Auto: ${n.auto_description}</div>`:''}
-              ${n.endgame_description?`<div style="font-size:.72rem;color:var(--accent2)">End: ${n.endgame_description}</div>`:''}
-              <div style="font-size:.82rem;white-space:pre-wrap;margin-top:.15rem">${n.notes||'<span style="color:var(--text3)">—</span>'}</div>
+              ${hasNote ? renderNoteSections(n) : '<span style="color:var(--text3);font-size:.8rem">—</span>'}
             </div>
             <button class="btn btn-sm" style="color:var(--red);padding:0 .3rem;flex-shrink:0" data-del="${n.id}">✕</button>
-          </div>`).join('')}
+          </div>`;
+        }).join('')}
         <button class="btn btn-secondary btn-sm btn-block" style="margin-top:.5rem" onclick="openTeamModal(${team})">View Full Profile →</button>
       </div>`;
   }).join('');

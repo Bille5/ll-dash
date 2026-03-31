@@ -259,15 +259,49 @@ def ftcscout_team(num):
 
 @api_bp.route('/ftcscout/team/<int:num>/events', methods=['GET'])
 def ftcscout_team_events(num):
-    """Get all events a team attended this season - for previous competition history"""
+    """Get all events a team attended this season.
+    FTCScout provides per-event ranking stats (rank, RP, W/L/T).
+    Event names/dates are enriched from the official FTC Events API.
+    """
     season = request.args.get('season', _season())
     try:
         r = _req.get(f'https://api.ftcscout.org/rest/v1/teams/{num}/events/{season}', timeout=10)
         print(f"[FTCScout team events {num}] status={r.status_code} body={r.text[:300]}")
-        if r.status_code == 200:
-            return jsonify(r.json())
-        return jsonify([]), r.status_code
+        if r.status_code != 200:
+            return jsonify([]), r.status_code
+
+        events_data = r.json()
+        if not isinstance(events_data, list):
+            return jsonify([])
+
+        # Enrich with official event names, dates, and location from FTC Events API
+        ftc_events = ftc_api.get_events(int(season), team_number=num)
+        if ftc_events and isinstance(ftc_events.get('events'), list):
+            event_map = {
+                e['code']: {
+                    'name':      e.get('name', ''),
+                    'dateStart': e.get('dateStart', ''),
+                    'dateEnd':   e.get('dateEnd', ''),
+                    'city':      e.get('city', ''),
+                    'stateprov': e.get('stateprov', ''),
+                    'typeName':  e.get('typeName', ''),
+                }
+                for e in ftc_events['events'] if e.get('code')
+            }
+            for ep in events_data:
+                code = ep.get('eventCode', '')
+                info = event_map.get(code, {})
+                # Set enriched fields — fall back to eventCode if name unavailable
+                ep['eventName']  = info.get('name') or code
+                ep['eventDate']  = info.get('dateStart', '')
+                ep['eventDateEnd'] = info.get('dateEnd', '')
+                ep['eventCity']  = info.get('city', '')
+                ep['eventState'] = info.get('stateprov', '')
+                ep['eventType']  = info.get('typeName', '')
+
+        return jsonify(events_data)
     except Exception as e:
+        print(f"[FTCScout team events {num}] error: {e}")
         return jsonify({'error': str(e)}), 500
 
 @api_bp.route('/ftcscout/event/<event_code>/teams', methods=['GET'])

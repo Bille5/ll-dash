@@ -216,3 +216,13 @@ input,select,textarea{font-family:var(--font)}
 
 /* pre-wrap for notes with newlines */
 .note-text { white-space: pre-wrap; }
+
+/* Structured note sections (auto/teleop/park/other) */
+.note-section { font-size: .78rem; margin-bottom: .25rem; line-height: 1.45; }
+.note-section-label { font-size: .6rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; font-family: var(--mono); color: var(--accent2); margin-right: .4rem; }
+
+/* RP stepper for simulator */
+.rp-stepper { display: flex; align-items: center; gap: .3rem; flex-shrink: 0; }
+.rp-step-btn { width: 28px; height: 28px; border-radius: 6px; background: var(--bg2); border: 1px solid var(--border); color: var(--text); font-size: 1.1rem; font-weight: 700; display: flex; align-items: center; justify-content: center; transition: background .1s; }
+.rp-step-btn:active { background: var(--bhi); }
+.rp-step-val { min-width: 32px; text-align: center; }
