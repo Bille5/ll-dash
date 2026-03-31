@@ -166,16 +166,85 @@ input,select,textarea{font-family:var(--font)}
 .compare-stat-lbl{font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.06em}
 
 /* Simulator */
-.sim-match-row{background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:.75rem;margin-bottom:.5rem}
-.sim-match-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:.5rem;gap:.5rem}
-.sim-toggle{display:flex;gap:.4rem;flex-shrink:0}
-.sim-btn{padding:.3rem .55rem;border-radius:4px;font-size:.7rem;font-weight:700;border:1px solid var(--border);color:var(--text2);transition:all .15s}
-.sim-btn.win.active{background:rgba(46,213,115,.15);color:var(--green);border-color:var(--green)}
-.sim-btn.loss.active{background:rgba(255,71,87,.15);color:var(--red);border-color:var(--red)}
-.sim-btn.tie.active{background:rgba(255,165,2,.15);color:var(--yellow);border-color:var(--yellow)}
 .projection-banner{background:linear-gradient(135deg,rgba(232,255,71,.08),rgba(71,200,255,.06));border:1px solid rgba(232,255,71,.2);border-radius:var(--r);padding:1rem;margin-bottom:1rem;text-align:center}
 .projection-rank{font-size:3rem;font-weight:800;font-family:var(--mono);color:var(--accent);line-height:1}
 .projection-label{font-size:.7rem;color:var(--text2);font-family:var(--mono);margin-top:.3rem}
+
+/* Sim: projection strip */
+.sim-proj-strip{display:flex;gap:.4rem;margin-bottom:.75rem}
+.sim-proj-item{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:.5rem .3rem;text-align:center}
+.sim-proj-val{font-family:var(--mono);font-size:1rem;font-weight:800;line-height:1.1}
+.sim-proj-lbl{font-size:.55rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-top:2px;font-family:var(--mono)}
+
+/* Sim: actions bar */
+.sim-actions-bar{display:flex;gap:.5rem;margin-bottom:.75rem}
+
+/* Sim: schedule list */
+.sim-sched-header{display:flex;align-items:center;padding:0 .6rem .3rem;font-size:.58rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);font-family:var(--mono)}
+.sim-sched-header span:first-child{min-width:42px}
+.sim-sched-header span:nth-child(2){flex:1}
+.sim-sched-header span:last-child{min-width:80px;text-align:right}
+
+.sim-sched-row{display:flex;align-items:center;gap:.5rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:.55rem .6rem;margin-bottom:.35rem}
+.sim-sched-row.sim-played{opacity:.65}
+.sim-sched-num{font-family:var(--mono);font-weight:700;font-size:.78rem;min-width:38px;color:var(--text2)}
+.sim-sched-teams{flex:1;display:flex;align-items:center;gap:.35rem;font-family:var(--mono);font-size:.7rem;flex-wrap:wrap}
+.sim-team-tag{padding:1px 5px;border-radius:4px;font-size:.68rem;font-weight:500}
+.sim-team-tag.red{background:rgba(255,71,87,.12);color:#ff8a94}
+.sim-team-tag.blue{background:rgba(71,200,255,.1);color:var(--accent2)}
+.sim-vs{font-size:.6rem;color:var(--text3);font-weight:700}
+
+.sim-sched-result{display:flex;flex-direction:column;align-items:flex-end;min-width:72px}
+.sim-result-badge{font-family:var(--mono);font-size:.78rem;font-weight:700}
+.sim-rp-earned{font-family:var(--mono);font-size:.6rem;color:var(--text3)}
+
+/* Sim: RP control */
+.sim-sched-rp-ctrl{display:flex;align-items:center;gap:.25rem;min-width:80px;justify-content:flex-end}
+.sim-rp-minus,.sim-rp-plus{width:26px;height:26px;border-radius:6px;background:var(--bg2);border:1px solid var(--border);color:var(--text);font-size:1rem;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .1s}
+.sim-rp-minus:active,.sim-rp-plus:active{background:var(--bhi)}
+.sim-rp-display{min-width:24px;text-align:center;font-family:var(--mono);font-size:1.15rem;font-weight:800;line-height:1}
+
+.sim-rp-legend{display:flex;gap:.6rem;justify-content:center;padding:.6rem 0 .25rem;font-size:.58rem;font-family:var(--mono);color:var(--text3)}
+
+/* Sim: cutoff line */
+.sim-cutoff-line{border-top:2px dashed var(--red);font-size:.6rem;font-family:var(--mono);color:var(--red);text-align:center;padding:.15rem 0;margin:.15rem 0}
+
+/* Sim: bubble */
+.sim-bubble-row{display:flex;align-items:center;gap:.5rem;padding:.45rem .5rem;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:.75rem}
+.sim-bubble-row:last-child{border-bottom:none}
+.sim-bubble-us{background:rgba(232,255,71,.06);border-radius:var(--rs)}
+.sim-bubble-out{opacity:.45}
+.sim-bubble-rank{min-width:28px;font-weight:700;font-size:.72rem}
+.sim-bubble-team{font-weight:600;min-width:44px}
+.sim-bubble-name{flex:1;font-size:.68rem;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font)}
+.sim-bubble-rp{font-size:.7rem;color:var(--text2)}
+
+/* Sim: scenarios */
+.sim-scenario-table{font-family:var(--mono);font-size:.72rem}
+.sim-scenario-header{display:flex;gap:.5rem;padding:.3rem .4rem;font-size:.6rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);border-bottom:1px solid var(--border)}
+.sim-scenario-header span{flex:1}
+.sim-scenario-row{display:flex;gap:.5rem;padding:.4rem;border-bottom:1px solid var(--border);align-items:center}
+.sim-scenario-row span{flex:1;color:var(--text2)}
+.sim-scenario-row.sim-scenario-fail{opacity:.5}
+.sim-scenario-rp{font-weight:700;color:var(--text)!important}
+
+/* Sim: analysis */
+.sim-analysis-row{background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:.65rem;margin-bottom:.5rem}
+.sim-analysis-header{display:flex;align-items:center;gap:.6rem;margin-bottom:.4rem}
+.sim-analysis-num{font-family:var(--mono);font-weight:700;font-size:.78rem;color:var(--text2);min-width:36px}
+.sim-analysis-pred{font-family:var(--mono);font-weight:800;font-size:.85rem}
+.sim-analysis-conf{font-family:var(--mono);font-size:.68rem;flex:1}
+.sim-analysis-rp{font-family:var(--mono);font-size:.72rem;color:var(--accent);font-weight:700}
+
+.sim-analysis-matchup{display:flex;align-items:stretch;gap:.4rem;margin-bottom:.4rem}
+.sim-analysis-side{flex:1;background:var(--bg2);border-radius:6px;padding:.4rem;text-align:center}
+.sim-analysis-side-label{font-size:.58rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-family:var(--mono);margin-bottom:.2rem}
+.sim-analysis-opr{font-family:var(--mono);font-size:.9rem;font-weight:800}
+.sim-analysis-teams{font-family:var(--mono);font-size:.58rem;color:var(--text3);margin-top:.15rem}
+.sim-analysis-vs{display:flex;align-items:center;font-size:.6rem;font-weight:700;color:var(--text3);font-family:var(--mono)}
+
+.sim-analysis-bar-wrap{height:4px;background:var(--bg2);border-radius:2px;overflow:hidden}
+.sim-analysis-bar-fill{height:100%;border-radius:2px;transition:width .3s}
 
 /* Hub */
 .hub-note{background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:.85rem;margin-bottom:.6rem}
@@ -221,8 +290,3 @@ input,select,textarea{font-family:var(--font)}
 .note-section { font-size: .78rem; margin-bottom: .25rem; line-height: 1.45; }
 .note-section-label { font-size: .6rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; font-family: var(--mono); color: var(--accent2); margin-right: .4rem; }
 
-/* RP stepper for simulator */
-.rp-stepper { display: flex; align-items: center; gap: .3rem; flex-shrink: 0; }
-.rp-step-btn { width: 28px; height: 28px; border-radius: 6px; background: var(--bg2); border: 1px solid var(--border); color: var(--text); font-size: 1.1rem; font-weight: 700; display: flex; align-items: center; justify-content: center; transition: background .1s; }
-.rp-step-btn:active { background: var(--bhi); }
-.rp-step-val { min-width: 32px; text-align: center; }
