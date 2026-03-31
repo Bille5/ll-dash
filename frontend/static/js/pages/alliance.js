@@ -2,22 +2,36 @@ async function alliance() {
   if (!appSettings.active_event_code) { noEventPage(); return; }
   loadingPage();
 
-  const [rankData, schedData, scoutData, flagData] = await Promise.all([
+  const season = appSettings.active_season || 2025;
+  const [rankData, schedData, scoutData, flagData, ftcEventData] = await Promise.all([
     API.getRankings().catch(()=>null),
     API.getSchedule('qual').catch(()=>null),
     API.getScouting().catch(()=>[]),
     API.getFlags().catch(()=>({})),
+    API.ftcscoutEvent(appSettings.active_event_code, season).catch(()=>null),
   ]);
 
   const rankings = rankData?.rankings || rankData?.Rankings || [];
   const schedule = schedData?.schedule || [];
   const notes    = Array.isArray(scoutData) ? scoutData : [];
 
+  // Build FTCScout OPR map
+  const ftcOprMap = {};
+  if (Array.isArray(ftcEventData)) {
+    ftcEventData.forEach(t => {
+      const num = t.teamNumber || t.number;
+      if (num && t.opr != null) {
+        ftcOprMap[num] = { total: t.opr, auto: t.autoOpr || 0, teleop: t.dcOpr || 0, endgame: t.egOpr || 0 };
+      } else if (num && t.tot) {
+        ftcOprMap[num] = { total: t.tot.value || 0, auto: t.auto?.value || 0, teleop: t.dc?.value || 0, endgame: t.eg?.value || 0 };
+      }
+    });
+  }
+
   const scoutMap = {};
   notes.forEach(n=>{ if(!scoutMap[n.team_number]) scoutMap[n.team_number]=[]; scoutMap[n.team_number].push(n); });
 
   const avg = (arr,f) => arr?.length ? arr.reduce((a,n)=>a+(n[f]||0),0)/arr.length : null;
-  const f1  = v => v!=null ? v.toFixed(1) : '--';
 
   // Compute per-team stats from schedule
   const schedStats = {};
@@ -41,6 +55,7 @@ async function alliance() {
     const ns   = scoutMap[r.teamNumber]||[];
     const ss   = schedStats[r.teamNumber]||{scores:[],autos:[],wins:0,played:0};
     const flag = (flagData[r.teamNumber]||{}).flag||'neutral';
+    const opr  = ftcOprMap[r.teamNumber] || null;
     return {
       num:r.teamNumber, name:r.teamName||'', rank:r.rank,
       wins:r.wins, losses:r.losses,
@@ -52,6 +67,10 @@ async function alliance() {
       scoutAvgTeleop: avg(ns,'teleop_score'),
       scoutAvgEnd:    avg(ns,'endgame_score'),
       notes: ns.length, notesList: ns, flag,
+      oprTotal: opr?.total || null,
+      oprAuto: opr?.auto || null,
+      oprTeleop: opr?.teleop || null,
+      oprEndgame: opr?.endgame || null,
     };
   });
 
@@ -76,7 +95,6 @@ function renderPickList(teams) {
 
   const teamRow = t => {
     const icon = t.flag==='target'?'🎯':t.flag==='dnp'?'🚫':'';
-    // Show latest scouting note preview under the team row
     let notePreview = '';
     if (t.notesList && t.notesList.length) {
       const latest = t.notesList[0];
@@ -98,7 +116,7 @@ function renderPickList(teams) {
         <div style="flex:1;min-width:0">
           <div style="font-weight:700;font-size:.85rem">${icon} ${t.num} <span style="color:var(--text2);font-weight:400;font-size:.75rem">${t.name}</span></div>
           <div style="font-size:.67rem;font-family:var(--mono);color:var(--text2)">
-            ${t.wins}W · RP ${t.rp?.toFixed(3)||'--'} · Avg ${t.avgScore??'--'} · Auto ${t.avgAuto??'--'}${t.notes?' · '+t.notes+' notes':''}
+            ${t.wins}W · RP ${t.rp?.toFixed(3)||'--'} · Avg ${t.avgScore??'--'} · Auto ${t.avgAuto??'--'}${t.oprTotal!=null?' · OPR '+t.oprTotal.toFixed(1):''}${t.notes?' · '+t.notes+' notes':''}
           </div>
           ${notePreview}
         </div>
@@ -175,19 +193,27 @@ function renderCompare(teams) {
 
     if (!sel.length) { document.getElementById('cmp-grid').innerHTML='<div style="color:var(--text3);font-size:.83rem">Select teams above</div>'; return; }
 
+    // Find best values among selected teams for highlighting
+    const selTeams = sel.map(num => teams.find(x => x.num == num)).filter(Boolean);
+
+    function bestVal(metric, higher = true) {
+      const vals = selTeams.map(t => t[metric]).filter(v => v != null);
+      if (!vals.length) return null;
+      return higher ? Math.max(...vals) : Math.min(...vals);
+    }
+
+    // Green = best, Blue = not best
+    function highlight(val, metric, higher = true) {
+      if (val == null || selTeams.length < 2) return 'var(--accent2)';
+      const b = bestVal(metric, higher);
+      if (b == null) return 'var(--accent2)';
+      return val >= b && higher ? 'var(--green)' : val <= b && !higher ? 'var(--green)' : 'var(--accent2)';
+    }
+
     document.getElementById('cmp-grid').innerHTML = sel.map(num=>{
       const t=teams.find(x=>x.num==num); if(!t) return '';
       const f1=v=>v!=null?v.toFixed(1):'--';
-      const best = (metric, all) => {
-        const vals = all.filter(x=>x.num!=TEAM_NUMBER).map(x=>x[metric]).filter(v=>v!=null);
-        return vals.length ? Math.max(...vals) : null;
-      };
-      const highlight = (val, metric) => {
-        if (val==null) return 'var(--accent2)';
-        const b = best(metric, teams.filter(x=>sel.includes(x.num)));
-        return val>=b ? 'var(--green)' : 'var(--accent2)';
-      };
-      // Build scout notes summary for compare column
+
       let scoutSummary = '';
       if (t.notesList && t.notesList.length) {
         const latest = t.notesList[0];
@@ -202,8 +228,12 @@ function renderCompare(teams) {
           <div class="compare-stat"><div class="compare-stat-val" style="color:${highlight(t.rp,'rp')}">${t.rp?.toFixed(3)||'--'}</div><div class="compare-stat-lbl">RP Avg</div></div>
           <div class="compare-stat"><div class="compare-stat-val" style="color:${highlight(t.avgScore,'avgScore')}">${t.avgScore??'--'}</div><div class="compare-stat-lbl">Avg Score</div></div>
           <div class="compare-stat"><div class="compare-stat-val" style="color:${highlight(t.avgAuto,'avgAuto')}">${t.avgAuto??'--'}</div><div class="compare-stat-lbl">Avg Auto</div></div>
-          <div class="compare-stat"><div class="compare-stat-val">${t.highScore??'--'}</div><div class="compare-stat-lbl">High Score</div></div>
-          <div class="compare-stat"><div class="compare-stat-val">${t.wins}-${t.losses}</div><div class="compare-stat-lbl">W-L</div></div>
+          <div class="compare-stat"><div class="compare-stat-val" style="color:${highlight(t.highScore,'highScore')}">${t.highScore??'--'}</div><div class="compare-stat-lbl">High Score</div></div>
+          <div class="compare-stat"><div class="compare-stat-val" style="color:${highlight(t.wins,'wins')}">${t.wins}-${t.losses}</div><div class="compare-stat-lbl">W-L</div></div>
+          <div class="compare-stat"><div class="compare-stat-val" style="color:${highlight(t.oprTotal,'oprTotal')}">${t.oprTotal!=null?t.oprTotal.toFixed(1):'--'}</div><div class="compare-stat-lbl">OPR Total</div></div>
+          <div class="compare-stat"><div class="compare-stat-val" style="color:${highlight(t.oprAuto,'oprAuto')}">${t.oprAuto!=null?t.oprAuto.toFixed(1):'--'}</div><div class="compare-stat-lbl">OPR Auto</div></div>
+          <div class="compare-stat"><div class="compare-stat-val" style="color:${highlight(t.oprTeleop,'oprTeleop')}">${t.oprTeleop!=null?t.oprTeleop.toFixed(1):'--'}</div><div class="compare-stat-lbl">OPR Teleop</div></div>
+          <div class="compare-stat"><div class="compare-stat-val" style="color:${highlight(t.oprEndgame,'oprEndgame')}">${t.oprEndgame!=null?t.oprEndgame.toFixed(1):'--'}</div><div class="compare-stat-lbl">OPR Endgame</div></div>
           <div class="compare-stat"><div class="compare-stat-val">${t.notes}</div><div class="compare-stat-lbl">Scout Notes</div></div>
           ${scoutSummary}
           <div class="flag-row" style="margin-top:.75rem">
