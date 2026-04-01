@@ -85,7 +85,30 @@ def get_oprs():
     event, err = _require_event()
     if err: return err
     season = request.args.get('season', _season())
-    return jsonify(ftc_api.get_oprs(season, event) or {'oprList': []})
+    try:
+        r = _req.get(f'https://api.ftcscout.org/rest/v1/events/{season}/{event}/teams', timeout=8)
+        if r.status_code == 200:
+            opr_list = []
+            for t in r.json():
+                num   = t.get('teamNumber')
+                stats = t.get('stats') or {}
+                tot   = (stats.get('tot') or {})
+                auto  = (stats.get('auto') or {})
+                dc    = (stats.get('dc') or {})
+                eg    = (stats.get('eg') or {})
+                if num:
+                    opr_list.append({
+                        'teamNumber': num,
+                        'opr':     tot.get('value', 0),
+                        'np_opr':  tot.get('value', 0),
+                        'autoOpr': auto.get('value', 0),
+                        'dcOpr':   dc.get('value', 0),
+                        'egOpr':   eg.get('value', 0),
+                    })
+            return jsonify({'oprList': opr_list})
+        return jsonify({'oprList': []}), r.status_code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @api_bp.route('/teams', methods=['GET'])
 def get_teams():
