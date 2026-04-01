@@ -327,6 +327,58 @@ def ftcscout_team_events(num):
         print(f"[FTCScout team events {num}] error: {e}")
         return jsonify({'error': str(e)}), 500
 
+@api_bp.route('/ftcscout/event/<event_code>/oprs', methods=['GET'])
+def ftcscout_event_oprs(event_code):
+    season = request.args.get('season', _season())
+    query = '''
+    query EventOPRs($season: Int!, $code: String!) {
+      eventByCode(season: $season, code: $code) {
+        teams {
+          teamNumber
+          stats {
+            tot { value }
+            auto { value }
+            dc { value }
+            eg { value }
+          }
+        }
+      }
+    }
+    '''
+    try:
+        r = _req.post('https://api.ftcscout.org/graphql',
+                       json={'query': query, 'variables': {'season': int(season), 'code': event_code}},
+                       timeout=10)
+        print(f"[FTCScout GraphQL oprs {event_code}] status={r.status_code}", end='')
+        if r.status_code == 200:
+            data = r.json()
+            teams = (data.get('data') or {}).get('eventByCode') or {}
+            teams = teams.get('teams') or []
+            print(f" teams={len(teams)}")
+            opr_list = []
+            for t in teams:
+                num = t.get('teamNumber')
+                if not num:
+                    continue
+                stats = t.get('stats') or {}
+                tot  = (stats.get('tot') or {}).get('value') or 0
+                auto = (stats.get('auto') or {}).get('value') or 0
+                dc   = (stats.get('dc') or {}).get('value') or 0
+                eg   = (stats.get('eg') or {}).get('value') or 0
+                opr_list.append({
+                    'teamNumber': num,
+                    'opr': tot,
+                    'autoOpr': auto,
+                    'dcOpr': dc,
+                    'egOpr': eg,
+                })
+            return jsonify({'oprList': opr_list})
+        print()
+        return jsonify({'oprList': []}), r.status_code
+    except Exception as e:
+        print(f" error: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @api_bp.route('/ftcscout/event/<event_code>/teams', methods=['GET'])
 def ftcscout_event_teams(event_code):
     season = request.args.get('season', _season())

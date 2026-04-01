@@ -3,10 +3,10 @@ async function schedule() {
   loadingPage();
 
   const season = appSettings.active_season || 2025;
-  const [schedData, rankData, ftcEventData] = await Promise.all([
+  const [schedData, rankData, oprResult] = await Promise.all([
     API.getSchedule('qual').catch(()=>null),
     API.getRankings().catch(()=>null),
-    API.ftcscoutEvent(appSettings.active_event_code, season).catch(()=>null),
+    API.ftcscoutEventOprs(appSettings.active_event_code, season).catch(()=>null),
   ]);
 
   const matches  = schedData?.schedule || [];
@@ -14,23 +14,19 @@ async function schedule() {
   const rankMap  = Object.fromEntries(rankings.map(r=>[r.teamNumber,r]));
   rankings.forEach(r=>{window._teamNames=window._teamNames||{};window._teamNames[r.teamNumber]=r.teamName||'';});
 
-  // Build OPR map from FTCScout
+  // Build OPR map from FTCScout GraphQL
   const oprMap = {};
-  if (Array.isArray(ftcEventData)) {
-    ftcEventData.forEach(t => {
-      const num = t.teamNumber || t.number;
-     if (num && t.opr != null) {
-          ftcOprMap[num] = { total: t.opr, auto: t.autoOpr || 0, teleop: t.dcOpr || 0, endgame: t.egOpr || 0 };
-      } else if (num && t.stats?.tot) {
-          const s = t.stats;
-          ftcOprMap[num] = { total: s.tot?.value || 0, auto: s.auto?.value || 0, teleop: s.dc?.value || 0, endgame: s.eg?.value || 0 };
+  if (oprResult && Array.isArray(oprResult.oprList)) {
+    oprResult.oprList.forEach(t => {
+      if (t.teamNumber) {
+        oprMap[t.teamNumber] = {
+          total:   t.opr    || 0,
+          auto:    t.autoOpr || 0,
+          teleop:  t.dcOpr   || 0,
+          endgame: t.egOpr   || 0,
+        };
       }
     });
-  }
-  // Fallback to FTC API OPRs
-  if (!Object.keys(oprMap).length) {
-    const oprData = await API.getOprs().catch(()=>null);
-    (oprData?.oprList || []).forEach(o => { oprMap[o.teamNumber] = o.opr || 0; });
   }
 
   if (!matches.length) {
@@ -65,8 +61,8 @@ async function schedule() {
   function predictMatch(m) {
     const redTeams  = (m.teams || []).filter(t => t.station?.startsWith('Red'));
     const blueTeams = (m.teams || []).filter(t => t.station?.startsWith('Blue'));
-    const redOPR  = redTeams.reduce((s, t) => s + (oprMap[t.teamNumber] || 0), 0);
-    const blueOPR = blueTeams.reduce((s, t) => s + (oprMap[t.teamNumber] || 0), 0);
+    const redOPR  = redTeams.reduce((s, t) => s + (oprMap[t.teamNumber]?.total || 0), 0);
+    const blueOPR = blueTeams.reduce((s, t) => s + (oprMap[t.teamNumber]?.total || 0), 0);
     const diff    = redOPR - blueOPR;
     const totalOPR = Math.max(redOPR + blueOPR, 1);
     const rawConf  = Math.min(Math.abs(diff) / (totalOPR * 0.4), 1);
