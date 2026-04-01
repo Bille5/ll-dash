@@ -28,9 +28,10 @@ async function simulator() {
     ftcEventData.forEach(t => {
       const num = t.teamNumber || t.number;
       if (num && t.opr != null) {
-        oprMap[num] = { opr: t.opr, autoOpr: t.autoOpr || 0, dcOpr: t.dcOpr || 0, egOpr: t.egOpr || 0 };
-      } else if (num && t.tot) {
-        oprMap[num] = { opr: t.tot.value || 0, autoOpr: t.auto?.value || 0, dcOpr: t.dc?.value || 0, egOpr: t.eg?.value || 0 };
+          ftcOprMap[num] = { total: t.opr, auto: t.autoOpr || 0, teleop: t.dcOpr || 0, endgame: t.egOpr || 0 };
+      } else if (num && t.stats?.tot) {
+          const s = t.stats;
+          ftcOprMap[num] = { total: s.tot?.value || 0, auto: s.auto?.value || 0, teleop: s.dc?.value || 0, endgame: s.eg?.value || 0 };
       }
     });
   }

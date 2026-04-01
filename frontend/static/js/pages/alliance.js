@@ -21,9 +21,10 @@ async function alliance() {
     ftcEventData.forEach(t => {
       const num = t.teamNumber || t.number;
       if (num && t.opr != null) {
-        ftcOprMap[num] = { total: t.opr, auto: t.autoOpr || 0, teleop: t.dcOpr || 0, endgame: t.egOpr || 0 };
-      } else if (num && t.tot) {
-        ftcOprMap[num] = { total: t.tot.value || 0, auto: t.auto?.value || 0, teleop: t.dc?.value || 0, endgame: t.eg?.value || 0 };
+          ftcOprMap[num] = { total: t.opr, auto: t.autoOpr || 0, teleop: t.dcOpr || 0, endgame: t.egOpr || 0 };
+      } else if (num && t.stats?.tot) {
+          const s = t.stats;
+          ftcOprMap[num] = { total: s.tot?.value || 0, auto: s.auto?.value || 0, teleop: s.dc?.value || 0, endgame: s.eg?.value || 0 };
       }
     });
   }

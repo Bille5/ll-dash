@@ -19,10 +19,11 @@ async function schedule() {
   if (Array.isArray(ftcEventData)) {
     ftcEventData.forEach(t => {
       const num = t.teamNumber || t.number;
-      if (num && t.opr != null) {
-        oprMap[num] = t.opr;
-      } else if (num && t.tot) {
-        oprMap[num] = t.tot.value || 0;
+     if (num && t.opr != null) {
+          ftcOprMap[num] = { total: t.opr, auto: t.autoOpr || 0, teleop: t.dcOpr || 0, endgame: t.egOpr || 0 };
+      } else if (num && t.stats?.tot) {
+          const s = t.stats;
+          ftcOprMap[num] = { total: s.tot?.value || 0, auto: s.auto?.value || 0, teleop: s.dc?.value || 0, endgame: s.eg?.value || 0 };
       }
     });
   }
