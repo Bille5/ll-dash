@@ -3,9 +3,9 @@ async function rankings() {
   loadingPage();
 
   const season = appSettings.active_season || 2025;
-  const [rankData, ftcEventData] = await Promise.all([
+  const [rankData, oprData] = await Promise.all([
     API.getRankings().catch(()=>null),
-    API.ftcscoutEvent(appSettings.active_event_code, season).catch(()=>null),
+    API.ftcscoutEventOprs(appSettings.active_event_code, season).catch(()=>null),
   ]);
 
   const ranks = rankData?.rankings || rankData?.Rankings || [];
@@ -14,14 +14,15 @@ async function rankings() {
 
   // Build FTCScout OPR map
   const ftcOprMap = {};
-  if (Array.isArray(ftcEventData)) {
-    ftcEventData.forEach(t => {
-      const num = t.teamNumber || t.number;
-      if (num && t.opr != null) {
-          ftcOprMap[num] = { total: t.opr, auto: t.autoOpr || 0, teleop: t.dcOpr || 0, endgame: t.egOpr || 0 };
-      } else if (num && t.stats?.tot) {
-          const s = t.stats;
-          ftcOprMap[num] = { total: s.tot?.value || 0, auto: s.auto?.value || 0, teleop: s.dc?.value || 0, endgame: s.eg?.value || 0 };
+  if (oprData && Array.isArray(oprData.oprList)) {
+    oprData.oprList.forEach(t => {
+      if (t.teamNumber) {
+        ftcOprMap[t.teamNumber] = {
+          total:   t.opr    || 0,
+          auto:    t.autoOpr || 0,
+          teleop:  t.dcOpr   || 0,
+          endgame: t.egOpr   || 0,
+        };
       }
     });
   }

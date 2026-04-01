@@ -8,10 +8,10 @@ async function simulator() {
   loadingPage();
 
   const season = appSettings.active_season || 2025;
-  const [rankData, schedData, ftcEventData] = await Promise.all([
+  const [rankData, schedData, oprResult] = await Promise.all([
     API.getRankings().catch(()=>null),
     API.getSchedule('qual').catch(()=>null),
-    API.ftcscoutEvent(appSettings.active_event_code, season).catch(()=>null),
+    API.ftcscoutEventOprs(appSettings.active_event_code, season).catch(()=>null),
   ]);
 
   const rankings = rankData?.rankings || rankData?.Rankings || [];
@@ -22,24 +22,19 @@ async function simulator() {
     return;
   }
 
-  // Build OPR map from FTCScout event data
+  // Build OPR map from FTCScout GraphQL
   const oprMap = {};
-  if (Array.isArray(ftcEventData)) {
-    ftcEventData.forEach(t => {
-      const num = t.teamNumber || t.number;
-      if (num && t.opr != null) {
-          ftcOprMap[num] = { total: t.opr, auto: t.autoOpr || 0, teleop: t.dcOpr || 0, endgame: t.egOpr || 0 };
-      } else if (num && t.stats?.tot) {
-          const s = t.stats;
-          ftcOprMap[num] = { total: s.tot?.value || 0, auto: s.auto?.value || 0, teleop: s.dc?.value || 0, endgame: s.eg?.value || 0 };
+  if (oprResult && Array.isArray(oprResult.oprList)) {
+    oprResult.oprList.forEach(t => {
+      if (t.teamNumber) {
+        oprMap[t.teamNumber] = {
+          total:   t.opr    || 0,
+          auto:    t.autoOpr || 0,
+          teleop:  t.dcOpr   || 0,
+          endgame: t.egOpr   || 0,
+        };
       }
     });
-  }
-  // Fallback: if FTCScout didn't return data, try FTC API OPRs
-  if (!Object.keys(oprMap).length) {
-    const oprData = await API.getOprs().catch(()=>null);
-    const oprList = oprData?.oprList || [];
-    oprList.forEach(o => { oprMap[o.teamNumber] = { opr: o.opr || 0, autoOpr: 0, dcOpr: 0, egOpr: 0 }; });
   }
 
   const rankMap = {};
@@ -57,8 +52,8 @@ async function simulator() {
     const redTeams  = (m.teams || []).filter(t => t.station?.startsWith('Red'));
     const blueTeams = (m.teams || []).filter(t => t.station?.startsWith('Blue'));
 
-    const redOPR  = redTeams.reduce((s, t) => s + (oprMap[t.teamNumber]?.opr || 0), 0);
-    const blueOPR = blueTeams.reduce((s, t) => s + (oprMap[t.teamNumber]?.opr || 0), 0);
+    const redOPR  = redTeams.reduce((s, t) => s + (oprMap[t.teamNumber]?.total || 0), 0);
+    const blueOPR = blueTeams.reduce((s, t) => s + (oprMap[t.teamNumber]?.total || 0), 0);
     const diff    = redOPR - blueOPR;
     const totalOPR = Math.max(redOPR + blueOPR, 1);
     const rawConf  = Math.min(Math.abs(diff) / (totalOPR * 0.4), 1);
