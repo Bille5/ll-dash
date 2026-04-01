@@ -329,17 +329,22 @@ def ftcscout_team_events(num):
 
 @api_bp.route('/ftcscout/event/<event_code>/oprs', methods=['GET'])
 def ftcscout_event_oprs(event_code):
-    season = request.args.get('season', _season())
+    season = int(request.args.get('season', _season()))
     query = '''
     query EventOPRs($season: Int!, $code: String!) {
       eventByCode(season: $season, code: $code) {
         teams {
           teamNumber
           stats {
-            tot { value }
-            auto { value }
-            dc { value }
-            eg { value }
+            ... on TeamEventStats2025 {
+              opr { totalPointsNp autoPoints dcPoints }
+            }
+            ... on TeamEventStats2024 {
+              opr { totalPointsNp autoPoints dcPoints }
+            }
+            ... on TeamEventStats2023 {
+              opr { totalPointsNp autoPoints dcPoints }
+            }
           }
         }
       }
@@ -347,7 +352,7 @@ def ftcscout_event_oprs(event_code):
     '''
     try:
         r = _req.post('https://api.ftcscout.org/graphql',
-                       json={'query': query, 'variables': {'season': int(season), 'code': event_code}},
+                       json={'query': query, 'variables': {'season': season, 'code': event_code}},
                        timeout=10)
         print(f"[FTCScout GraphQL oprs {event_code}] status={r.status_code}", end='')
         if r.status_code == 200:
@@ -361,10 +366,11 @@ def ftcscout_event_oprs(event_code):
                 if not num:
                     continue
                 stats = t.get('stats') or {}
-                tot  = (stats.get('tot') or {}).get('value') or 0
-                auto = (stats.get('auto') or {}).get('value') or 0
-                dc   = (stats.get('dc') or {}).get('value') or 0
-                eg   = (stats.get('eg') or {}).get('value') or 0
+                opr = stats.get('opr') or {}
+                tot  = opr.get('totalPointsNp') or 0
+                auto = opr.get('autoPoints') or 0
+                dc   = opr.get('dcPoints') or 0
+                eg   = round(tot - auto - dc, 2) if tot else 0
                 opr_list.append({
                     'teamNumber': num,
                     'opr': tot,
