@@ -2,15 +2,35 @@ async function schedule() {
   if (!appSettings.active_event_code) { noEventPage(); return; }
   loadingPage();
 
-  const [schedData, rankData] = await Promise.all([
+  const season = appSettings.active_season || 2025;
+  const [schedData, rankData, ftcEventData] = await Promise.all([
     API.getSchedule('qual').catch(()=>null),
     API.getRankings().catch(()=>null),
+    API.ftcscoutEvent(appSettings.active_event_code, season).catch(()=>null),
   ]);
 
   const matches  = schedData?.schedule || [];
   const rankings = rankData?.rankings || rankData?.Rankings || [];
   const rankMap  = Object.fromEntries(rankings.map(r=>[r.teamNumber,r]));
   rankings.forEach(r=>{window._teamNames=window._teamNames||{};window._teamNames[r.teamNumber]=r.teamName||'';});
+
+  // Build OPR map from FTCScout
+  const oprMap = {};
+  if (Array.isArray(ftcEventData)) {
+    ftcEventData.forEach(t => {
+      const num = t.teamNumber || t.number;
+      if (num && t.opr != null) {
+        oprMap[num] = t.opr;
+      } else if (num && t.tot) {
+        oprMap[num] = t.tot.value || 0;
+      }
+    });
+  }
+  // Fallback to FTC API OPRs
+  if (!Object.keys(oprMap).length) {
+    const oprData = await API.getOprs().catch(()=>null);
+    (oprData?.oprList || []).forEach(o => { oprMap[o.teamNumber] = o.opr || 0; });
+  }
 
   if (!matches.length) {
     renderPage('<div class="empty-state"><div class="empty-icon">◷</div><div>No schedule yet.</div></div>');
@@ -21,17 +41,38 @@ async function schedule() {
   window._scheduleData = matches;
   window._schedRankMap = rankMap;
 
+  let showPredicted = false;
+
   renderPage(`
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.25rem">
       <div class="page-title" style="margin-bottom:0">Schedule</div>
       <button class="icon-btn" onclick="schedule()" title="Reload">↻</button>
     </div>
-    <div class="tabs" style="margin-bottom:.75rem">
+    <div class="tabs" style="margin-bottom:.5rem">
       <button class="tab active" id="tab-all">All</button>
       <button class="tab" id="tab-ours">Ours</button>
       <button class="tab" id="tab-upcoming">Upcoming</button>
     </div>
+    <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem">
+      <label style="display:flex;align-items:center;gap:.4rem;font-size:.72rem;font-family:var(--mono);color:var(--text2);cursor:pointer">
+        <input type="checkbox" id="pred-toggle" style="accent-color:var(--accent)"/>
+        Show Predicted Winners
+      </label>
+    </div>
     <div id="sched-list"></div>`);
+
+  function predictMatch(m) {
+    const redTeams  = (m.teams || []).filter(t => t.station?.startsWith('Red'));
+    const blueTeams = (m.teams || []).filter(t => t.station?.startsWith('Blue'));
+    const redOPR  = redTeams.reduce((s, t) => s + (oprMap[t.teamNumber] || 0), 0);
+    const blueOPR = blueTeams.reduce((s, t) => s + (oprMap[t.teamNumber] || 0), 0);
+    const diff    = redOPR - blueOPR;
+    const totalOPR = Math.max(redOPR + blueOPR, 1);
+    const rawConf  = Math.min(Math.abs(diff) / (totalOPR * 0.4), 1);
+    const confidence = Math.round(rawConf * 100);
+    const winner = diff > 0 ? 'Red' : diff < 0 ? 'Blue' : 'Tie';
+    return { winner, confidence, redOPR, blueOPR };
+  }
 
   function teamLabel(t, alliance) {
     const isOurs = t.teamNumber == TEAM_NUMBER;
@@ -53,11 +94,6 @@ async function schedule() {
       const red    = (m.teams||[]).filter(t=>t.station?.startsWith('Red'));
       const blue   = (m.teams||[]).filter(t=>t.station?.startsWith('Blue'));
 
-      // Field number: FTC API puts it in description e.g. "Qualification 1"
-      // series field = field number (0-indexed or 1-indexed depending on event)
-      // Some events use series=0 for field 1, series=1 for field 2
-      // description format: "Qualification 1" — no field info there
-      // field is in the 'series' property: 0 = field 1, 1 = field 2
       const fieldNum = m.series != null ? `Field ${m.series + 1}` : '';
 
       let scoreHtml, winBadge='';
@@ -76,6 +112,14 @@ async function schedule() {
         scoreHtml=`<div class="match-time">${formatTime(m.startTime)}</div>`;
       }
 
+      // Prediction line for unplayed matches
+      let predLine = '';
+      if (showPredicted && !played && Object.keys(oprMap).length) {
+        const pred = predictMatch(m);
+        const predColor = pred.winner === 'Red' ? '#ff8a94' : pred.winner === 'Blue' ? 'var(--accent2)' : 'var(--yellow)';
+        predLine = `<span style="color:${predColor};font-weight:700">${pred.winner === 'Tie' ? 'Toss-up' : pred.winner}</span><span>${pred.confidence}%</span>`;
+      }
+
       const autoLine = played
         ? `<div class="match-sub-stats">
             <span>Auto R:${m.scoreRedAuto??'?'} B:${m.scoreBlueAuto??'?'}</span>
@@ -85,6 +129,7 @@ async function schedule() {
         : `<div class="match-sub-stats">
             ${fieldNum?`<span>${fieldNum}</span>`:''}
             <span>${m.description||''}</span>
+            ${predLine}
            </div>`;
 
       return `
@@ -101,10 +146,23 @@ async function schedule() {
     bindTeamClicks(rankings);
   }
 
+  let currentFilter = 'all';
+  function getFilteredList() {
+    if (currentFilter === 'ours') return matches.filter(m=>m.teams?.some(t=>t.teamNumber==TEAM_NUMBER));
+    if (currentFilter === 'upcoming') return matches.filter(m=>m.scoreRedFinal===null);
+    return matches;
+  }
+
   renderMatches(matches);
-  document.getElementById('tab-all').addEventListener('click',      ()=>{setActiveTab('tab-all');      renderMatches(matches);});
-  document.getElementById('tab-ours').addEventListener('click',     ()=>{setActiveTab('tab-ours');     renderMatches(matches.filter(m=>m.teams?.some(t=>t.teamNumber==TEAM_NUMBER)));});
-  document.getElementById('tab-upcoming').addEventListener('click', ()=>{setActiveTab('tab-upcoming'); renderMatches(matches.filter(m=>m.scoreRedFinal===null));});
+
+  document.getElementById('tab-all').addEventListener('click', ()=>{ currentFilter='all'; setActiveTab('tab-all'); renderMatches(getFilteredList()); });
+  document.getElementById('tab-ours').addEventListener('click', ()=>{ currentFilter='ours'; setActiveTab('tab-ours'); renderMatches(getFilteredList()); });
+  document.getElementById('tab-upcoming').addEventListener('click', ()=>{ currentFilter='upcoming'; setActiveTab('tab-upcoming'); renderMatches(getFilteredList()); });
+
+  document.getElementById('pred-toggle').addEventListener('change', (e) => {
+    showPredicted = e.target.checked;
+    renderMatches(getFilteredList());
+  });
 }
 
 function openMatchDetail(matchNumber) {

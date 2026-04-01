@@ -2,38 +2,123 @@ async function rankings() {
   if (!appSettings.active_event_code) { noEventPage(); return; }
   loadingPage();
 
-  const rankData = await API.getRankings().catch(()=>null);
+  const season = appSettings.active_season || 2025;
+  const [rankData, ftcEventData] = await Promise.all([
+    API.getRankings().catch(()=>null),
+    API.ftcscoutEvent(appSettings.active_event_code, season).catch(()=>null),
+  ]);
+
   const ranks = rankData?.rankings || rankData?.Rankings || [];
   if (!ranks.length) { renderPage('<div class="empty-state"><div class="empty-icon">◬</div><div>No rankings yet.</div></div>'); return; }
   ranks.forEach(r=>{ window._teamNames=window._teamNames||{}; window._teamNames[r.teamNumber]=r.teamName||''; });
 
-  const rows = ranks.map(r=>`
-    <tr class="${r.teamNumber==TEAM_NUMBER?'our-row':''}" onclick="openTeamModal(${r.teamNumber})" style="cursor:pointer">
-      <td>${r.rank}</td>
-      <td>
-        <div style="font-weight:700">${r.teamNumber}</div>
-        <div style="font-size:.63rem;color:var(--text2);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.teamName||''}</div>
-      </td>
-      <td>${r.wins}-${r.losses}${r.ties?'-'+r.ties:''}</td>
-      <td>${r.sortOrder1?.toFixed(3)??'--'}</td>
-      <td>${r.sortOrder2?.toFixed(1)??'--'}</td>
-      <td>${r.matchesCounted??'--'}/${r.matchesPlayed??'--'}</td>
-    </tr>`).join('');
+  // Build FTCScout OPR map
+  const ftcOprMap = {};
+  if (Array.isArray(ftcEventData)) {
+    ftcEventData.forEach(t => {
+      const num = t.teamNumber || t.number;
+      if (num && t.opr != null) {
+        ftcOprMap[num] = { total: t.opr, auto: t.autoOpr || 0, teleop: t.dcOpr || 0, endgame: t.egOpr || 0 };
+      } else if (num && t.tot) {
+        ftcOprMap[num] = { total: t.tot.value || 0, auto: t.auto?.value || 0, teleop: t.dc?.value || 0, endgame: t.eg?.value || 0 };
+      }
+    });
+  }
+
+  // Merge OPR into ranks
+  const teamsData = ranks.map(r => ({
+    ...r,
+    oprTotal: ftcOprMap[r.teamNumber]?.total ?? null,
+    oprAuto: ftcOprMap[r.teamNumber]?.auto ?? null,
+    oprTeleop: ftcOprMap[r.teamNumber]?.teleop ?? null,
+    oprEndgame: ftcOprMap[r.teamNumber]?.endgame ?? null,
+  }));
+
+  let sortCol = 'rank';
+  let sortDir = 'asc'; // asc or desc
+
+  function renderTable() {
+    // Sort teams
+    const sorted = [...teamsData].sort((a, b) => {
+      let av, bv;
+      switch (sortCol) {
+        case 'rank':       av = a.rank; bv = b.rank; break;
+        case 'team':       av = a.teamNumber; bv = b.teamNumber; break;
+        case 'wl':         av = a.wins; bv = b.wins; break;
+        case 'rp':         av = a.sortOrder1 || 0; bv = b.sortOrder1 || 0; break;
+        case 'avgsc':      av = a.sortOrder2 || 0; bv = b.sortOrder2 || 0; break;
+        case 'oprTotal':   av = a.oprTotal ?? -1; bv = b.oprTotal ?? -1; break;
+        case 'oprAuto':    av = a.oprAuto ?? -1; bv = b.oprAuto ?? -1; break;
+        case 'oprTeleop':  av = a.oprTeleop ?? -1; bv = b.oprTeleop ?? -1; break;
+        case 'oprEndgame': av = a.oprEndgame ?? -1; bv = b.oprEndgame ?? -1; break;
+        default:           av = a.rank; bv = b.rank;
+      }
+      const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+
+    const arrow = col => sortCol === col ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+
+    const rows = sorted.map(r => `
+      <tr class="${r.teamNumber==TEAM_NUMBER?'our-row':''}" onclick="openTeamModal(${r.teamNumber})" style="cursor:pointer">
+        <td>${r.rank}</td>
+        <td>
+          <div style="font-weight:700">${r.teamNumber}</div>
+          <div style="font-size:.63rem;color:var(--text2);max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.teamName||''}</div>
+        </td>
+        <td>${r.wins}-${r.losses}${r.ties?'-'+r.ties:''}</td>
+        <td>${r.sortOrder1?.toFixed(3)??'--'}</td>
+        <td>${r.sortOrder2?.toFixed(1)??'--'}</td>
+        <td style="color:var(--accent2)">${r.oprTotal!=null?r.oprTotal.toFixed(1):'--'}</td>
+        <td>${r.oprAuto!=null?r.oprAuto.toFixed(1):'--'}</td>
+        <td>${r.oprTeleop!=null?r.oprTeleop.toFixed(1):'--'}</td>
+        <td>${r.oprEndgame!=null?r.oprEndgame.toFixed(1):'--'}</td>
+      </tr>`).join('');
+
+    document.getElementById('rank-table-container').innerHTML = `
+      <table class="rank-table">
+        <thead><tr>
+          <th class="sortable-th" data-sort="rank" style="text-align:left">#${arrow('rank')}</th>
+          <th class="sortable-th" data-sort="team" style="text-align:left">Team${arrow('team')}</th>
+          <th class="sortable-th" data-sort="wl">W-L${arrow('wl')}</th>
+          <th class="sortable-th" data-sort="rp">RP${arrow('rp')}</th>
+          <th class="sortable-th" data-sort="avgsc">Avg Sc${arrow('avgsc')}</th>
+          <th class="sortable-th" data-sort="oprTotal" style="color:var(--accent2)">OPR${arrow('oprTotal')}</th>
+          <th class="sortable-th" data-sort="oprAuto">Auto${arrow('oprAuto')}</th>
+          <th class="sortable-th" data-sort="oprTeleop">Tele${arrow('oprTeleop')}</th>
+          <th class="sortable-th" data-sort="oprEndgame">End${arrow('oprEndgame')}</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+
+    // Bind sort clicks
+    document.querySelectorAll('.sortable-th').forEach(th => {
+      th.style.cursor = 'pointer';
+      th.addEventListener('click', () => {
+        const col = th.dataset.sort;
+        if (sortCol === col) {
+          sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          sortCol = col;
+          // Default sort direction: rank/team asc, everything else desc (higher=better)
+          sortDir = (col === 'rank' || col === 'team') ? 'asc' : 'desc';
+        }
+        renderTable();
+      });
+    });
+  }
 
   renderPage(`
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.25rem">
       <div class="page-title" style="margin-bottom:0">Rankings</div>
       <button class="icon-btn" onclick="rankings()" title="Reload">↻</button>
     </div>
-    <div style="font-size:.7rem;font-family:var(--mono);color:var(--text2);margin-bottom:.75rem">${appSettings.active_event_name||'Event'} · ${ranks.length} teams · Tap row for details</div>
-    <div style="overflow-x:auto">
-      <table class="rank-table">
-        <thead><tr><th>#</th><th>Team</th><th>W-L</th><th>RP Avg</th><th>Avg Sc</th><th>Counted</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
-    <div style="margin-top:.5rem;font-size:.6rem;font-family:var(--mono);color:var(--text3)">RP Avg = sortOrder1 · Avg Score = sortOrder2 · Tap any team for full profile + FTCScout stats</div>
+    <div style="font-size:.7rem;font-family:var(--mono);color:var(--text2);margin-bottom:.75rem">${appSettings.active_event_name||'Event'} · ${ranks.length} teams · Tap headers to sort · Tap row for details</div>
+    <div style="overflow-x:auto" id="rank-table-container"></div>
+    <div style="margin-top:.5rem;font-size:.6rem;font-family:var(--mono);color:var(--text3)">OPR values from FTCScout · Tap any team for full profile</div>
   `);
+
+  renderTable();
 }
 
 // ── Full team profile modal (used everywhere) ─────────────────
@@ -87,7 +172,6 @@ async function openTeamModal(teamNum) {
   const avg       = f=>notes.length?(notes.reduce((a,n)=>a+(n[f]||0),0)/notes.length).toFixed(1):'--';
 
   // FTCScout quick stats block
-  // API response shape: {season, number, tot:{value,rank}, auto:{value,rank}, dc:{value,rank}, eg:{value,rank}, count}
   let ftcHtml = '';
   if (ftcData && (ftcData.tot || ftcData.totalNp)) {
     const qs = ftcData;
@@ -99,7 +183,7 @@ async function openTeamModal(teamNum) {
     const autoRank= qs.auto?.rank;
     const dcRank  = qs.dc?.rank;
     const egRank  = qs.eg?.rank;
-    const count   = qs.count; // total TEPs used in global stats calculation
+    const count   = qs.count;
     const fmt = v => v!=null ? v.toFixed(2) : '--';
     const fmtRank = r => r!=null ? `#${r}` : '';
     ftcHtml=`
@@ -166,19 +250,16 @@ async function openTeamModal(teamNum) {
   // Build season history HTML
   let historyHtml = '';
   if (Array.isArray(historyData) && historyData.length) {
-    // Sort by official FTC event start date (enriched by backend)
     const events = [...historyData].sort((a,b)=>new Date(a.eventDate||0)-new Date(b.eventDate||0));
     historyHtml = `
       <div style="margin-bottom:1rem">
         <div class="form-label" style="margin-bottom:.4rem">Season History ${season}–${String(parseInt(season)+1).slice(-2)}</div>
         ${events.map(ep => {
-          // eventName/eventDate/eventCity/eventState are enriched by the backend from official FTC API
           const evName  = ep.eventName  || ep.eventCode || '?';
           const evCode  = ep.eventCode  || '';
           const evDate  = ep.eventDate  ? new Date(ep.eventDate).toLocaleDateString([],{month:'short',day:'numeric'}) : '';
           const evLoc   = [ep.eventCity, ep.eventState].filter(Boolean).join(', ');
           const evType  = ep.eventType  || '';
-          // Stats are nested under ep.stats (FTCScout TeamEventParticipation schema)
           const stats   = ep.stats || {};
           const rank    = stats.rank;
           const wins    = stats.wins    ?? null;

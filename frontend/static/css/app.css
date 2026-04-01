@@ -33,7 +33,7 @@ input,select,textarea{font-family:var(--font)}
 .topbar-right{display:flex;gap:.5rem}
 .icon-btn{width:34px;height:34px;border-radius:var(--rs);background:var(--bg3);border:1px solid var(--border);color:var(--text2);font-size:1rem;display:flex;align-items:center;justify-content:center}
 .icon-btn:active{color:var(--accent);border-color:var(--accent)}
-.page-container{flex:1;margin-top:var(--top-h);padding:1rem;padding-bottom:calc(var(--nav-h) + 1.5rem);overflow-y:auto}
+.page-container{flex:1;margin-top:var(--top-h);padding:1rem;padding-bottom:calc(var(--nav-h) + 3rem + env(safe-area-inset-bottom));overflow-y:auto}
 .bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:100;height:var(--nav-h);background:var(--bg);border-top:1px solid var(--border);display:flex;align-items:center;padding-bottom:env(safe-area-inset-bottom)}
 .nav-btn{flex:1;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--text3);font-size:.6rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
 .nav-btn .nav-icon{font-size:1.05rem;line-height:1}
@@ -245,4 +245,9 @@ input,select,textarea{font-family:var(--font)}
 /* Structured note sections (auto/teleop/park/other) */
 .note-section { font-size: .78rem; margin-bottom: .25rem; line-height: 1.45; }
 .note-section-label { font-size: .6rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; font-family: var(--mono); color: var(--accent2); margin-right: .4rem; }
+
+/* Sortable table headers */
+.sortable-th{cursor:pointer;user-select:none;transition:color .15s;white-space:nowrap}
+.sortable-th:hover{color:var(--accent2)}
+.sortable-th:active{color:var(--accent)}
 
