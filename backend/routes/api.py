@@ -335,15 +335,12 @@ def ftcscout_event_oprs(event_code):
       eventByCode(season: $season, code: $code) {
         teams {
           teamNumber
-          stats {
-            ... on TeamEventStats2025 {
-              opr { totalPointsNp autoPoints dcPoints }
-            }
-            ... on TeamEventStats2024 {
-              opr { totalPointsNp autoPoints dcPoints }
-            }
-            ... on TeamEventStats2023 {
-              opr { totalPointsNp autoPoints dcPoints }
+          team {
+            quickStats(season: $season) {
+              tot { value }
+              auto { value }
+              dc { value }
+              eg { value }
             }
           }
         }
@@ -365,12 +362,11 @@ def ftcscout_event_oprs(event_code):
                 num = t.get('teamNumber')
                 if not num:
                     continue
-                stats = t.get('stats') or {}
-                opr = stats.get('opr') or {}
-                tot  = opr.get('totalPointsNp') or 0
-                auto = opr.get('autoPoints') or 0
-                dc   = opr.get('dcPoints') or 0
-                eg   = round(tot - auto - dc, 2) if tot else 0
+                qs = (t.get('team') or {}).get('quickStats') or {}
+                tot  = (qs.get('tot') or {}).get('value') or 0
+                auto = (qs.get('auto') or {}).get('value') or 0
+                dc   = (qs.get('dc') or {}).get('value') or 0
+                eg   = (qs.get('eg') or {}).get('value') or 0
                 opr_list.append({
                     'teamNumber': num,
                     'opr': tot,
