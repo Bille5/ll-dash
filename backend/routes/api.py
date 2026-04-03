@@ -343,6 +343,17 @@ def ftcscout_event_oprs(event_code):
               eg { value }
             }
           }
+          stats {
+            ... on TeamEventStats2025 {
+              opr { totalPointsNp autoPoints dcPoints }
+            }
+            ... on TeamEventStats2024 {
+              opr { totalPointsNp autoPoints dcPoints }
+            }
+            ... on TeamEventStats2023 {
+              opr { totalPointsNp autoPoints dcPoints }
+            }
+          }
         }
       }
     }
@@ -367,12 +378,22 @@ def ftcscout_event_oprs(event_code):
                 auto = (qs.get('auto') or {}).get('value') or 0
                 dc   = (qs.get('dc') or {}).get('value') or 0
                 eg   = (qs.get('eg') or {}).get('value') or 0
+                # Event-local OPR from stats.opr
+                lo = (t.get('stats') or {}).get('opr') or {}
+                l_tot  = lo.get('totalPointsNp') or 0
+                l_auto = lo.get('autoPoints') or 0
+                l_dc   = lo.get('dcPoints') or 0
+                l_eg   = round(l_tot - l_auto - l_dc, 2) if l_tot else 0
                 opr_list.append({
                     'teamNumber': num,
                     'opr': tot,
                     'autoOpr': auto,
                     'dcOpr': dc,
                     'egOpr': eg,
+                    'localOpr': l_tot,
+                    'localAutoOpr': l_auto,
+                    'localDcOpr': l_dc,
+                    'localEgOpr': l_eg,
                 })
             return jsonify({'oprList': opr_list})
         print()
