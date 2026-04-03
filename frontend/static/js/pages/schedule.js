@@ -38,8 +38,6 @@ async function schedule() {
   window._scheduleData = matches;
   window._schedRankMap = rankMap;
 
-  let showPredicted = false;
-
   renderPage(`
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.25rem">
       <div class="page-title" style="margin-bottom:0">Schedule</div>
@@ -49,12 +47,6 @@ async function schedule() {
       <button class="tab active" id="tab-all">All</button>
       <button class="tab" id="tab-ours">Ours</button>
       <button class="tab" id="tab-upcoming">Upcoming</button>
-    </div>
-    <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem">
-      <label style="display:flex;align-items:center;gap:.4rem;font-size:.72rem;font-family:var(--mono);color:var(--text2);cursor:pointer">
-        <input type="checkbox" id="pred-toggle" style="accent-color:var(--accent)"/>
-        Show Predicted Winners
-      </label>
     </div>
     <div id="sched-list"></div>`);
 
@@ -73,9 +65,11 @@ async function schedule() {
 
   function teamLabel(t, alliance) {
     const isOurs = t.teamNumber == TEAM_NUMBER;
+    const name = window._teamNames?.[t.teamNumber] || '';
+    const shortName = name.length > 12 ? name.slice(0,11) + '…' : name;
     const chip = `<span class="team-chip ${alliance}${isOurs?' our clickable-chip':' clickable-chip'}" data-team="${t.teamNumber}"
       style="${isOurs?'font-weight:800;border-width:2px':''}">
-      ${isOurs?`<strong>${t.teamNumber}</strong>`:t.teamNumber}
+      ${isOurs?`<strong>${t.teamNumber}</strong>`:t.teamNumber}${shortName ? `<span style="font-size:.58rem;opacity:.7;margin-left:2px">${shortName}</span>` : ''}
     </span>`;
     return chip;
   }
@@ -109,12 +103,14 @@ async function schedule() {
         scoreHtml=`<div class="match-time">${formatTime(m.startTime)}</div>`;
       }
 
-      // Prediction line for unplayed matches
+      // OPR prediction for unplayed matches
       let predLine = '';
-      if (showPredicted && !played && Object.keys(oprMap).length) {
+      if (!played && Object.keys(oprMap).length) {
         const pred = predictMatch(m);
         const predColor = pred.winner === 'Red' ? '#ff8a94' : pred.winner === 'Blue' ? 'var(--accent2)' : 'var(--yellow)';
-        predLine = `<span style="color:${predColor};font-weight:700">${pred.winner === 'Tie' ? 'Toss-up' : pred.winner}</span><span>${pred.confidence}%</span>`;
+        predLine = `<span style="color:${predColor};font-weight:700">${pred.winner === 'Tie' ? 'Toss-up' : pred.winner + ' favored'}</span>
+          <span>${pred.confidence}%</span>
+          <span style="font-size:.6rem">OPR <span style="color:#ff8a94">${pred.redOPR.toFixed(0)}</span> v <span style="color:var(--accent2)">${pred.blueOPR.toFixed(0)}</span></span>`;
       }
 
       const autoLine = played
@@ -125,7 +121,6 @@ async function schedule() {
            </div>`
         : `<div class="match-sub-stats">
             ${fieldNum?`<span>${fieldNum}</span>`:''}
-            <span>${m.description||''}</span>
             ${predLine}
            </div>`;
 
@@ -156,10 +151,6 @@ async function schedule() {
   document.getElementById('tab-ours').addEventListener('click', ()=>{ currentFilter='ours'; setActiveTab('tab-ours'); renderMatches(getFilteredList()); });
   document.getElementById('tab-upcoming').addEventListener('click', ()=>{ currentFilter='upcoming'; setActiveTab('tab-upcoming'); renderMatches(getFilteredList()); });
 
-  document.getElementById('pred-toggle').addEventListener('change', (e) => {
-    showPredicted = e.target.checked;
-    renderMatches(getFilteredList());
-  });
 }
 
 function openMatchDetail(matchNumber) {
