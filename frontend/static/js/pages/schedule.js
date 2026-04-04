@@ -107,10 +107,22 @@ async function schedule() {
       let predLine = '';
       if (Object.keys(oprMap).length) {
         const pred = predictMatch(m);
-        const predColor = pred.winner === 'Red' ? '#ff8a94' : pred.winner === 'Blue' ? 'var(--accent2)' : 'var(--yellow)';
-        predLine = `<span style="color:${predColor};font-weight:700">${pred.winner === 'Tie' ? 'Toss-up' : pred.winner + ' favored'}</span>
-          <span>${pred.confidence}%</span>
-          <span style="font-size:.6rem">OPR <span style="color:#ff8a94">${pred.redOPR.toFixed(0)}</span> v <span style="color:var(--accent2)">${pred.blueOPR.toFixed(0)}</span></span>`;
+        const ourTeam = m.teams?.find(t => t.teamNumber == TEAM_NUMBER);
+        if (ourTeam) {
+          const ourA = ourTeam.station?.startsWith('Red') ? 'Red' : 'Blue';
+          const weFavored = pred.winner === ourA;
+          const tossup = pred.winner === 'Tie';
+          const color = tossup ? 'var(--yellow)' : weFavored ? 'var(--green)' : 'var(--red)';
+          const label = tossup ? 'Toss-up' : weFavored ? 'Favored' : 'Unfavored';
+          predLine = `<span style="color:${color};font-weight:700">${label}</span>
+            <span>${pred.confidence}%</span>
+            <span style="font-size:.6rem">OPR <span style="color:#ff8a94">${pred.redOPR.toFixed(0)}</span> v <span style="color:var(--accent2)">${pred.blueOPR.toFixed(0)}</span></span>`;
+        } else {
+          const predColor = pred.winner === 'Red' ? '#ff8a94' : pred.winner === 'Blue' ? 'var(--accent2)' : 'var(--yellow)';
+          predLine = `<span style="color:${predColor};font-weight:700">${pred.winner === 'Tie' ? 'Toss-up' : pred.winner + ' favored'}</span>
+            <span>${pred.confidence}%</span>
+            <span style="font-size:.6rem">OPR <span style="color:#ff8a94">${pred.redOPR.toFixed(0)}</span> v <span style="color:var(--accent2)">${pred.blueOPR.toFixed(0)}</span></span>`;
+        }
       }
 
       const subStats = played
