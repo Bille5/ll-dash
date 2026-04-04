@@ -103,9 +103,9 @@ async function schedule() {
         scoreHtml=`<div class="match-time">${formatTime(m.startTime)}</div>`;
       }
 
-      // OPR prediction for unplayed matches
+      // OPR prediction for all matches
       let predLine = '';
-      if (!played && Object.keys(oprMap).length) {
+      if (Object.keys(oprMap).length) {
         const pred = predictMatch(m);
         const predColor = pred.winner === 'Red' ? '#ff8a94' : pred.winner === 'Blue' ? 'var(--accent2)' : 'var(--yellow)';
         predLine = `<span style="color:${predColor};font-weight:700">${pred.winner === 'Tie' ? 'Toss-up' : pred.winner + ' favored'}</span>
@@ -113,12 +113,13 @@ async function schedule() {
           <span style="font-size:.6rem">OPR <span style="color:#ff8a94">${pred.redOPR.toFixed(0)}</span> v <span style="color:var(--accent2)">${pred.blueOPR.toFixed(0)}</span></span>`;
       }
 
-      const autoLine = played
+      const subStats = played
         ? `<div class="match-sub-stats">
             <span>Auto R:${m.scoreRedAuto??'?'} B:${m.scoreBlueAuto??'?'}</span>
             ${(m.scoreRedFoul||m.scoreBlueFoul)?`<span>Fouls R:${m.scoreRedFoul} B:${m.scoreBlueFoul}</span>`:''}
             ${fieldNum?`<span>${fieldNum}</span>`:''}
-           </div>`
+           </div>
+           ${predLine ? `<div class="match-sub-stats">${predLine}</div>` : ''}`
         : `<div class="match-sub-stats">
             ${fieldNum?`<span>${fieldNum}</span>`:''}
             ${predLine}
@@ -130,7 +131,7 @@ async function schedule() {
           <div class="match-alliances" style="flex:1">
             <div class="alliance-teams">${red.map(t=>teamLabel(t,'red')).join('')}</div>
             <div class="alliance-teams">${blue.map(t=>teamLabel(t,'blue')).join('')}</div>
-            ${autoLine}
+            ${subStats}
           </div>
           ${scoreHtml}
         </div>`;
