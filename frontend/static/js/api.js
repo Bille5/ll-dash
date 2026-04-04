@@ -46,3 +46,4 @@ API.ftcscoutTeam       = (num, season)  => API.get(`/ftcscout/team/${num}?season
 API.ftcscoutTeamEvents = (num, season)  => API.get(`/ftcscout/team/${num}/events?season=${season||2025}`).catch(()=>null);
 API.ftcscoutEvent      = (code, season) => API.get(`/ftcscout/event/${code}/teams?season=${season||2025}`).catch(()=>null);
 API.ftcscoutEventOprs  = (code, season) => API.get(`/ftcscout/event/${code}/oprs?season=${season||2025}`).catch(()=>null);
+API.ftcscoutEventMatchRP = (code, season) => API.get(`/ftcscout/event/${code}/match-rp?season=${season||2025}`).catch(()=>null);
