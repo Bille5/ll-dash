@@ -8,14 +8,24 @@ async function simulator() {
   loadingPage();
 
   const season = appSettings.active_season || 2025;
-  const [rankData, schedData, oprResult] = await Promise.all([
+  const [rankData, schedData, oprResult, matchScoresData] = await Promise.all([
     API.getRankings().catch(()=>null),
     API.getSchedule('qual').catch(()=>null),
     API.ftcscoutEventOprs(appSettings.active_event_code, season).catch(()=>null),
+    API.getMatches('qual').catch(()=>null),
   ]);
 
   const rankings = rankData?.rankings || rankData?.Rankings || [];
   const schedule = schedData?.schedule || [];
+
+  // Build per-match alliance scores map (movementRp/goalRp/patternRp)
+  const scoresMap = {};
+  const msList = matchScoresData?.MatchScores || matchScoresData?.matchScores || [];
+  msList.forEach(ms => {
+    const red  = (ms.alliances || []).find(a => a.alliance === 'Red');
+    const blue = (ms.alliances || []).find(a => a.alliance === 'Blue');
+    scoresMap[ms.matchNumber] = { red, blue };
+  });
 
   if (!rankings.length) {
     renderPage('<div class="empty-state"><div class="empty-icon">▲</div><div>No rankings yet.<br><span style="font-size:.75rem">Appears after first matches are scored.</span></div></div>');
@@ -43,20 +53,29 @@ async function simulator() {
 
   const unplayed = schedule.filter(m => m.scoreRedFinal === null);
 
+  // Compute actual RP for our team in a played match (movementRp+goalRp+patternRp + win/tie)
+  function actualRPFor(m) {
+    const ourTeam = m.teams?.find(t => t.teamNumber == TEAM_NUMBER);
+    if (!ourTeam) return null;
+    const ourA = ourTeam.station?.startsWith('Red') ? 'Red' : 'Blue';
+    const won = ourA === 'Red' ? m.redWins : m.blueWins;
+    const isTie = !m.redWins && !m.blueWins;
+    const sc = scoresMap[m.matchNumber];
+    if (sc) {
+      const alliance = ourA === 'Red' ? sc.red : sc.blue;
+      return computeMatchRP(alliance, won, isTie);
+    }
+    // Fallback without scores data: 3 win / 0 loss / 1 tie
+    return won ? 3 : isTie ? 1 : 0;
+  }
+
   // Sim state: RP per match (all matches, played + unplayed)
   const sim = {};
   schedule.forEach(m => {
     if (m.scoreRedFinal !== null) {
-      // Played match: default RP based on our team's actual result
-      const ourTeam = m.teams?.find(t => t.teamNumber == TEAM_NUMBER);
-      if (ourTeam) {
-        const ourA = ourTeam.station?.startsWith('Red') ? 'Red' : 'Blue';
-        const won = ourA === 'Red' ? m.redWins : m.blueWins;
-        const lost = ourA === 'Red' ? m.blueWins : m.redWins;
-        sim[m.matchNumber] = won ? 3 : lost ? 0 : 1;
-      } else {
-        sim[m.matchNumber] = 3;
-      }
+      // Played match: use actual RP from FTC scores data
+      const rp = actualRPFor(m);
+      sim[m.matchNumber] = rp != null ? rp : 3;
     } else {
       sim[m.matchNumber] = 3; // unplayed default
     }
@@ -181,10 +200,25 @@ async function simulator() {
           const isTie = m.redWins === false && m.blueWins === false;
           winBadge = `<span style="font-size:.68rem;font-weight:800;color:${won ? 'var(--green)' : isTie ? 'var(--yellow)' : 'var(--red)'}"> ${won ? 'W' : isTie ? 'T' : 'L'}</span>`;
         }
+        // Show score + actual RP breakdown for our team (if available)
+        let rpChips = '';
+        if (isOurs && scoresMap[m.matchNumber]) {
+          const ourA = m.teams.find(t => t.teamNumber == TEAM_NUMBER)?.station?.startsWith('Red') ? 'Red' : 'Blue';
+          const a = ourA === 'Red' ? scoresMap[m.matchNumber].red : scoresMap[m.matchNumber].blue;
+          if (a) {
+            const f = allianceRPFlags(a);
+            const chips = [];
+            if (f.movement) chips.push('M');
+            if (f.goal)     chips.push('G');
+            if (f.pattern)  chips.push('P');
+            if (chips.length) rpChips = ` <span style="opacity:.7">[${chips.join('')}]</span>`;
+          }
+        }
         subStats = `<div class="match-sub-stats">
           <span class="red-score" style="${m.redWins ? 'font-weight:800' : ''}">${m.scoreRedFinal}</span>
           <span>-</span>
           <span class="blue-score" style="${m.blueWins ? 'font-weight:800' : ''}">${m.scoreBlueFinal}</span>
+          ${rpChips}
         </div>`;
       } else {
         const pred = predictMatch(m);
@@ -220,7 +254,7 @@ async function simulator() {
         <button class="btn btn-sm btn-primary" id="sim-all-btn">Auto-Predict All</button>
         <button class="btn btn-sm btn-secondary" id="sim-reset-btn">Reset</button>
       </div>
-      <div class="sim-rp-rules">RP per match: 0-6 | Use +/- to set RP for each match</div>
+      <div class="sim-rp-rules">RP = Movement + Goal + Pattern + 3(Win)/1(Tie) · range 0-6 · [MGP] = RPs earned</div>
       ${schedule.length ? matchRows : '<div class="empty-state" style="padding:1.5rem"><div>No matches found.</div></div>'}
     `;
 
@@ -242,16 +276,9 @@ async function simulator() {
     document.getElementById('sim-all-btn')?.addEventListener('click', () => {
       schedule.forEach(m => {
         if (m.scoreRedFinal !== null) {
-          // Played: estimate from actual result for our team
-          const ourTeam = m.teams?.find(t => t.teamNumber == TEAM_NUMBER);
-          if (ourTeam) {
-            const ourA = ourTeam.station?.startsWith('Red') ? 'Red' : 'Blue';
-            const won = ourA === 'Red' ? m.redWins : m.blueWins;
-            const lost = ourA === 'Red' ? m.blueWins : m.redWins;
-            sim[m.matchNumber] = won ? 3 : lost ? 0 : 1;
-          } else {
-            sim[m.matchNumber] = 3;
-          }
+          // Played: use actual RP from FTC scores data
+          const rp = actualRPFor(m);
+          sim[m.matchNumber] = rp != null ? rp : 3;
         } else {
           // Unplayed: predict from OPR
           const pred = predictMatch(m);
@@ -274,15 +301,8 @@ async function simulator() {
     document.getElementById('sim-reset-btn')?.addEventListener('click', () => {
       schedule.forEach(m => {
         if (m.scoreRedFinal !== null) {
-          const ourTeam = m.teams?.find(t => t.teamNumber == TEAM_NUMBER);
-          if (ourTeam) {
-            const ourA = ourTeam.station?.startsWith('Red') ? 'Red' : 'Blue';
-            const won = ourA === 'Red' ? m.redWins : m.blueWins;
-            const lost = ourA === 'Red' ? m.blueWins : m.redWins;
-            sim[m.matchNumber] = won ? 3 : lost ? 0 : 1;
-          } else {
-            sim[m.matchNumber] = 3;
-          }
+          const rp = actualRPFor(m);
+          sim[m.matchNumber] = rp != null ? rp : 3;
         } else {
           sim[m.matchNumber] = 3;
         }

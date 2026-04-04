@@ -177,13 +177,23 @@ async function openTeamModal(teamNum) {
 
   // Load in parallel: local data + FTCScout
   const season = appSettings.active_season || 2025;
-  const [rankData, schedData, scoutData, flagData, ftcData] = await Promise.all([
+  const [rankData, schedData, scoutData, flagData, ftcData, matchScoresData] = await Promise.all([
     API.getRankings().catch(()=>null),
     API.getSchedule('qual').catch(()=>null),
     API.getScouting(teamNum).catch(()=>[]),
     API.getFlags().catch(()=>({})),
     API.ftcscoutTeam(teamNum, season),
+    API.getMatches('qual').catch(()=>null),
   ]);
+
+  // Build per-match alliance scores map for RP breakdown
+  const tmScoresMap = {};
+  const tmMsList = matchScoresData?.MatchScores || matchScoresData?.matchScores || [];
+  tmMsList.forEach(ms => {
+    const red  = (ms.alliances || []).find(x => x.alliance === 'Red');
+    const blue = (ms.alliances || []).find(x => x.alliance === 'Blue');
+    tmScoresMap[ms.matchNumber] = { red, blue };
+  });
 
   const rankings    = rankData?.rankings||rankData?.Rankings||[];
   const schedule    = schedData?.schedule||[];
@@ -254,11 +264,25 @@ async function openTeamModal(teamNum) {
     const a=m.teams.find(t=>t.teamNumber==teamNum)?.station?.startsWith('Red')?'Red':'Blue';
     const s=a==='Red'?m.scoreRedFinal:m.scoreBlueFinal;
     const won=a==='Red'?m.redWins:m.blueWins;
+    const isTie = !m.redWins && !m.blueWins;
+    const sc = tmScoresMap[m.matchNumber];
+    const alliance = sc ? (a === 'Red' ? sc.red : sc.blue) : null;
+    const rp = alliance ? computeMatchRP(alliance, won, isTie) : null;
+    let rpTags = '';
+    if (alliance) {
+      const f = allianceRPFlags(alliance);
+      const parts = [];
+      if (f.movement) parts.push('M');
+      if (f.goal)     parts.push('G');
+      if (f.pattern)  parts.push('P');
+      if (parts.length) rpTags = ` <span style="opacity:.6">[${parts.join('')}]</span>`;
+    }
     return `<div style="display:flex;gap:.5rem;align-items:center;padding:.35rem 0;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:.75rem">
       <span style="color:var(--text3);min-width:30px">Q${m.matchNumber}</span>
       <span style="${a==='Red'?'color:#ff8a94':'color:var(--accent2)'}">${a}</span>
       <span style="flex:1;color:var(--text2)">${s} pts</span>
-      <span style="color:${won?'var(--green)':'var(--red)'};font-weight:700">${won?'W':'L'}</span>
+      ${rp!=null?`<span style="color:var(--accent);font-weight:700">${rp} RP${rpTags}</span>`:''}
+      <span style="color:${won?'var(--green)':isTie?'var(--yellow)':'var(--red)'};font-weight:700;min-width:14px;text-align:right">${won?'W':isTie?'T':'L'}</span>
     </div>`;
   }).join('');
 
