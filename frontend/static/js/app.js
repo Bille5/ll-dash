@@ -179,6 +179,31 @@ function setActiveTab(id){
 // Used in dashboard and schedule
 const matchSubStatsStyle=`display:flex;gap:.4rem;flex-wrap:wrap;font-size:.67rem;font-family:var(--mono);color:var(--text2);margin-top:.3rem`;
 
+// Normalize alliance RP flags (accept both FTC API and FTCScout field name variants).
+function allianceRPFlags(a) {
+  if (!a) return {movement:false, goal:false, pattern:false};
+  return {
+    movement: !!(a.movementRp ?? a.movementRankingPoint ?? a.MovementRp),
+    goal:     !!(a.goalRp     ?? a.goalRankingPoint     ?? a.GoalRp),
+    pattern:  !!(a.patternRp  ?? a.patternRankingPoint  ?? a.PatternRp),
+  };
+}
+
+// Compute ranking points for an alliance in a qualification match.
+// In FTC 2025 (Decode): movementRp + goalRp + patternRp (each +1) + 3 for win / 1 for tie
+// `a` is an alliance object from the FTC /scores endpoint; `isWinner`/`isTie` describe match outcome.
+function computeMatchRP(a, isWinner, isTie) {
+  if (!a) return 0;
+  const f = allianceRPFlags(a);
+  let rp = 0;
+  if (f.movement) rp += 1;
+  if (f.goal)     rp += 1;
+  if (f.pattern)  rp += 1;
+  if (isWinner) rp += 3;
+  else if (isTie) rp += 1;
+  return rp;
+}
+
 // Make openTeamModal globally callable from onclick attributes
 // openTeamModal is global via rankings.js
 // openMatchDetail is global via schedule.js

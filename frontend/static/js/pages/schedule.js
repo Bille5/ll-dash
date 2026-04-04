@@ -3,16 +3,27 @@ async function schedule() {
   loadingPage();
 
   const season = appSettings.active_season || 2025;
-  const [schedData, rankData, oprResult] = await Promise.all([
+  const [schedData, rankData, oprResult, matchScoresData] = await Promise.all([
     API.getSchedule('qual').catch(()=>null),
     API.getRankings().catch(()=>null),
     API.ftcscoutEventOprs(appSettings.active_event_code, season).catch(()=>null),
+    API.getMatches('qual').catch(()=>null),
   ]);
 
   const matches  = schedData?.schedule || [];
   const rankings = rankData?.rankings || rankData?.Rankings || [];
   const rankMap  = Object.fromEntries(rankings.map(r=>[r.teamNumber,r]));
   rankings.forEach(r=>{window._teamNames=window._teamNames||{};window._teamNames[r.teamNumber]=r.teamName||'';});
+
+  // Build per-match scores map: matchNumber -> {red, blue} alliance objects with RP flags
+  const scoresMap = {};
+  const matchScores = matchScoresData?.MatchScores || matchScoresData?.matchScores || [];
+  matchScores.forEach(ms => {
+    const red  = (ms.alliances || []).find(a => a.alliance === 'Red');
+    const blue = (ms.alliances || []).find(a => a.alliance === 'Blue');
+    scoresMap[ms.matchNumber] = { red, blue };
+  });
+  window._matchScoresMap = scoresMap;
 
   // Build OPR map from FTCScout GraphQL
   const oprMap = {};
@@ -103,6 +114,25 @@ async function schedule() {
         scoreHtml=`<div class="match-time">${formatTime(m.startTime)}</div>`;
       }
 
+      // Per-match RP breakdown (from FTC API scores data, played matches only)
+      let rpLine = '';
+      if (played && scoresMap[m.matchNumber]) {
+        const sc = scoresMap[m.matchNumber];
+        const isTie = !m.redWins && !m.blueWins;
+        const redRP  = computeMatchRP(sc.red,  m.redWins,  isTie);
+        const blueRP = computeMatchRP(sc.blue, m.blueWins, isTie);
+        const tags = a => {
+          if (!a) return '';
+          const f = allianceRPFlags(a);
+          const parts = [];
+          if (f.movement) parts.push('M');
+          if (f.goal)     parts.push('G');
+          if (f.pattern)  parts.push('P');
+          return parts.length ? ` <span style="opacity:.6">[${parts.join('')}]</span>` : '';
+        };
+        rpLine = `<span>RP <span style="color:#ff8a94">${redRP}${tags(sc.red)}</span> · <span style="color:var(--accent2)">${blueRP}${tags(sc.blue)}</span></span>`;
+      }
+
       // OPR prediction for all matches
       let predLine = '';
       if (Object.keys(oprMap).length) {
@@ -130,6 +160,7 @@ async function schedule() {
             <span>Auto R:${m.scoreRedAuto??'?'} B:${m.scoreBlueAuto??'?'}</span>
             ${(m.scoreRedFoul||m.scoreBlueFoul)?`<span>Fouls R:${m.scoreRedFoul} B:${m.scoreBlueFoul}</span>`:''}
             ${fieldNum?`<span>${fieldNum}</span>`:''}
+            ${rpLine}
            </div>
            ${predLine ? `<div class="match-sub-stats">${predLine}</div>` : ''}`
         : `<div class="match-sub-stats">
@@ -174,6 +205,29 @@ function openMatchDetail(matchNumber) {
   const blue  = (m.teams||[]).filter(t=>t.station?.startsWith('Blue'));
   const played= m.scoreRedFinal !== null;
   const fieldNum = m.series != null ? `Field ${m.series + 1}` : '';
+  const scoresMap = window._matchScoresMap || {};
+  const sc = scoresMap[matchNumber];
+  const isTie = played && !m.redWins && !m.blueWins;
+  const redRP  = played && sc ? computeMatchRP(sc.red,  m.redWins,  isTie) : null;
+  const blueRP = played && sc ? computeMatchRP(sc.blue, m.blueWins, isTie) : null;
+  const rpBadge = (a, isWinner) => {
+    if (!a) return '';
+    const f = allianceRPFlags(a);
+    const items = [
+      ['Move',    f.movement],
+      ['Goal',    f.goal],
+      ['Pattern', f.pattern],
+    ];
+    const chips = items.map(([lbl, on]) =>
+      `<span style="background:${on?'var(--bg1)':'transparent'};color:${on?'var(--green)':'var(--text3)'};padding:1px 5px;border-radius:3px;font-size:.6rem;font-family:var(--mono);border:1px solid ${on?'var(--green)':'var(--border)'}">${on?'+1':'0'} ${lbl}</span>`
+    ).join(' ');
+    const winRP = isTie ? '+1 Tie' : isWinner ? '+3 Win' : '0 Loss';
+    const winColor = isTie ? 'var(--yellow)' : isWinner ? 'var(--green)' : 'var(--text3)';
+    return `<div style="display:flex;gap:.25rem;flex-wrap:wrap;margin-top:.35rem">
+      ${chips}
+      <span style="background:${isWinner||isTie?'var(--bg1)':'transparent'};color:${winColor};padding:1px 5px;border-radius:3px;font-size:.6rem;font-family:var(--mono);border:1px solid ${winColor}">${winRP}</span>
+    </div>`;
+  };
 
   const teamDetailRow = (t, alliance) => {
     const r   = rankMap[t.teamNumber];
@@ -210,19 +264,21 @@ function openMatchDetail(matchNumber) {
         ${played ? `
         <div class="stat-grid" style="margin-bottom:1rem">
           <div class="stat-box" style="border-color:rgba(255,71,87,.3)">
-            <div style="font-size:.65rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#ff8a94;font-family:var(--mono);margin-bottom:.3rem">Red Alliance</div>
+            <div style="font-size:.65rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#ff8a94;font-family:var(--mono);margin-bottom:.3rem">Red Alliance${redRP!=null?` · <span style="color:var(--text)">${redRP} RP</span>`:''}</div>
             <div class="stat-value" style="color:#ff8a94;font-size:2.2rem">${m.scoreRedFinal}</div>
             <div style="font-size:.72rem;font-family:var(--mono);color:var(--text2);margin-top:.3rem">
               Auto: ${m.scoreRedAuto??'?'} · Foul: ${m.scoreRedFoul??0}
             </div>
+            ${sc?rpBadge(sc.red, m.redWins):''}
             ${m.redWins?'<div style="font-size:.75rem;color:var(--green);font-weight:800;margin-top:.25rem">✓ WINNER</div>':''}
           </div>
           <div class="stat-box" style="border-color:rgba(71,200,255,.3)">
-            <div style="font-size:.65rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent2);font-family:var(--mono);margin-bottom:.3rem">Blue Alliance</div>
+            <div style="font-size:.65rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent2);font-family:var(--mono);margin-bottom:.3rem">Blue Alliance${blueRP!=null?` · <span style="color:var(--text)">${blueRP} RP</span>`:''}</div>
             <div class="stat-value" style="color:var(--accent2);font-size:2.2rem">${m.scoreBlueFinal}</div>
             <div style="font-size:.72rem;font-family:var(--mono);color:var(--text2);margin-top:.3rem">
               Auto: ${m.scoreBlueAuto??'?'} · Foul: ${m.scoreBlueFoul??0}
             </div>
+            ${sc?rpBadge(sc.blue, m.blueWins):''}
             ${m.blueWins?'<div style="font-size:.75rem;color:var(--green);font-weight:800;margin-top:.25rem">✓ WINNER</div>':''}
           </div>
         </div>` : `
