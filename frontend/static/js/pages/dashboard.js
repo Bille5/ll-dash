@@ -2,10 +2,19 @@ async function dashboard() {
   if (!appSettings.active_event_code) { noEventPage(); return; }
   loadingPage();
 
-  const [rankData, schedData] = await Promise.all([
+  const season = appSettings.active_season || 2025;
+  const [rankData, schedData, matchRpData] = await Promise.all([
     API.getRankings().catch(()=>null),
     API.getSchedule('qual').catch(()=>null),
+    API.ftcscoutEventMatchRP(appSettings.active_event_code, season).catch(()=>null),
   ]);
+
+  // Per-match RP map from FTCScout GraphQL
+  const dashScoresMap = {};
+  (matchRpData?.matches || []).forEach(ms => {
+    if (ms.tournamentLevel && ms.tournamentLevel !== 'Quals' && ms.tournamentLevel !== 'qual') return;
+    dashScoresMap[ms.matchNum] = { red: ms.red, blue: ms.blue };
+  });
 
   const rankings = rankData?.rankings || rankData?.Rankings || [];
   const schedule = schedData?.schedule || [];
@@ -113,10 +122,18 @@ async function dashboard() {
           <span style="color:var(--text3);align-self:center;font-size:.75rem">vs</span>
           ${blue.map(t=>teamChipNamed(t,'blue')).join('')}
         </div>
-        <div style="display:flex;gap:.5rem;justify-content:center;flex-wrap:wrap;font-size:.65rem;font-family:var(--mono);color:var(--text3)">
-          <span>Auto ${oS>0?oAuto:'–'} vs ${oppAuto||'–'}</span>
-          <span>${alliance} Alliance</span>
-          ${last.scoreRedFoul||last.scoreBlueFoul?`<span>Fouls R:${last.scoreRedFoul||0} B:${last.scoreBlueFoul||0}</span>`:''}
+        <div class="match-sub-stats" style="justify-content:center;margin-top:.2rem">
+          ${pairChip('Auto', last.scoreRedAuto??0, last.scoreBlueAuto??0)}
+          ${(last.scoreRedFoul||last.scoreBlueFoul)?pairChip('Foul', last.scoreRedFoul||0, last.scoreBlueFoul||0):''}
+          ${(() => {
+            const sc = dashScoresMap[last.matchNumber];
+            if (!sc) return '';
+            const tie = last.redWins===false && last.blueWins===false;
+            const rRP = computeMatchRP(sc.red, last.redWins, tie);
+            const bRP = computeMatchRP(sc.blue, last.blueWins, tie);
+            return rpPairChip(rRP, bRP, sc.red, sc.blue);
+          })()}
+          <span style="background:transparent;border:1px solid var(--border);color:${alliance==='Red'?'#ff8a94':'#47c8ff'};font-weight:700">${alliance}</span>
         </div>
       </div>`;
   }
@@ -170,9 +187,17 @@ async function dashboard() {
             </div>
           </div>
           <div class="match-sub-stats">
-            <span>Auto ${oAuto} vs ${oppAuto}</span>
-            ${(m.scoreRedFoul||m.scoreBlueFoul)?`<span>Fouls R:${m.scoreRedFoul} B:${m.scoreBlueFoul}</span>`:''}
-            <span>${ourA(m)} · ${m.teams.find(t=>t.teamNumber==TEAM_NUMBER)?.station||''}</span>
+            ${pairChip('Auto', m.scoreRedAuto??0, m.scoreBlueAuto??0)}
+            ${(m.scoreRedFoul||m.scoreBlueFoul)?pairChip('Foul', m.scoreRedFoul||0, m.scoreBlueFoul||0):''}
+            ${(() => {
+              const sc = dashScoresMap[m.matchNumber];
+              if (!sc) return '';
+              const tie = m.redWins===false && m.blueWins===false;
+              const rRP = computeMatchRP(sc.red, m.redWins, tie);
+              const bRP = computeMatchRP(sc.blue, m.blueWins, tie);
+              return rpPairChip(rRP, bRP, sc.red, sc.blue);
+            })()}
+            <span style="background:transparent;border:1px solid var(--border);color:${ourA(m)==='Red'?'#ff8a94':'#47c8ff'};font-weight:700">${m.teams.find(t=>t.teamNumber==TEAM_NUMBER)?.station||''}</span>
           </div>
         </div>`;
     }).join('');

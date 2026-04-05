@@ -234,8 +234,17 @@ input,select,textarea{font-family:var(--font)}
 /* ── Additional styles for v3 ─── */
 .match-detail-row{background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:.7rem;margin-bottom:.4rem}
 .match-detail-row.our-match{border-color:rgba(232,255,71,.4)}
-.match-sub-stats{display:flex;gap:.4rem;flex-wrap:wrap;font-size:.67rem;font-family:var(--mono);color:var(--text2);margin-top:.3rem}
-.match-sub-stats span{background:var(--bg2);padding:1px 5px;border-radius:3px}
+.match-sub-stats{display:flex;gap:.35rem;flex-wrap:wrap;font-size:.67rem;font-family:var(--mono);color:var(--text2);margin-top:.3rem;align-items:center}
+.match-sub-stats > span{background:var(--bg2);padding:1px 5px;border-radius:3px}
+.match-sub-stats > .pair-chip{background:var(--bg2)}
+.pair-chip{display:inline-flex;align-items:center;gap:.25rem;background:var(--bg2);border:1px solid var(--border);border-radius:3px;padding:1px 5px;font-family:var(--mono);font-size:.64rem;line-height:1.25}
+.pair-chip .pc-lbl{font-size:.52rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);font-weight:700}
+.pair-chip .pc-r{color:#ff8a94;font-weight:700}
+.pair-chip .pc-b{color:#47c8ff;font-weight:700}
+.pair-chip .pc-sep{color:var(--text3);opacity:.5}
+.pair-chip .pc-tag{font-size:.52rem;opacity:.7;margin-left:1px;color:var(--text2)}
+.pair-chip.pair-chip-neutral{color:var(--accent2);font-weight:700}
+.pair-chip.pair-chip-field{color:var(--text2)}
 .clickable-chip{cursor:pointer;transition:opacity .15s}
 .clickable-chip:active{opacity:.7}
 

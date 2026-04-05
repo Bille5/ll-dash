@@ -198,33 +198,23 @@ async function simulator() {
           const isTie = m.redWins === false && m.blueWins === false;
           winBadge = `<span style="font-size:.68rem;font-weight:800;color:${won ? 'var(--green)' : isTie ? 'var(--yellow)' : 'var(--red)'}"> ${won ? 'W' : isTie ? 'T' : 'L'}</span>`;
         }
-        // Show score + actual RP breakdown for our team (if available)
-        let rpChips = '';
-        if (isOurs && scoresMap[m.matchNumber]) {
-          const ourA = m.teams.find(t => t.teamNumber == TEAM_NUMBER)?.station?.startsWith('Red') ? 'Red' : 'Blue';
-          const a = ourA === 'Red' ? scoresMap[m.matchNumber].red : scoresMap[m.matchNumber].blue;
-          if (a) {
-            const f = allianceRPFlags(a);
-            const chips = [];
-            if (f.movement) chips.push('M');
-            if (f.goal)     chips.push('G');
-            if (f.pattern)  chips.push('P');
-            if (chips.length) rpChips = ` <span style="opacity:.7">[${chips.join('')}]</span>`;
-          }
+        // Both-alliance RP breakdown from FTCScout
+        let rpLine = '';
+        const sc = scoresMap[m.matchNumber];
+        if (sc) {
+          const isTie = !m.redWins && !m.blueWins;
+          const redRP  = computeMatchRP(sc.red,  m.redWins,  isTie);
+          const blueRP = computeMatchRP(sc.blue, m.blueWins, isTie);
+          rpLine = rpPairChip(redRP, blueRP, sc.red, sc.blue);
         }
         subStats = `<div class="match-sub-stats">
-          <span class="red-score" style="${m.redWins ? 'font-weight:800' : ''}">${m.scoreRedFinal}</span>
-          <span>-</span>
-          <span class="blue-score" style="${m.blueWins ? 'font-weight:800' : ''}">${m.scoreBlueFinal}</span>
-          ${rpChips}
+          ${pairChip('Score', m.scoreRedFinal, m.scoreBlueFinal)}
+          ${rpLine}
         </div>`;
       } else {
         const pred = predictMatch(m);
-        const predColor = pred.winner === 'Red' ? '#ff8a94' : pred.winner === 'Blue' ? 'var(--accent2)' : 'var(--yellow)';
         subStats = `<div class="match-sub-stats">
-          <span style="color:${predColor};font-weight:700">${pred.winner === 'Tie' ? 'Toss-up' : pred.winner + ' wins'}</span>
-          <span>${pred.confidence}% conf</span>
-          <span>OPR ${pred.redOPR.toFixed(0)} v ${pred.blueOPR.toFixed(0)}</span>
+          ${pairChip('OPR', pred.redOPR.toFixed(0), pred.blueOPR.toFixed(0))}
         </div>`;
       }
 
@@ -249,7 +239,7 @@ async function simulator() {
 
     document.getElementById('sim-tab-content').innerHTML = `
       <div class="sim-top-bar">
-        <button class="btn btn-sm btn-primary" id="sim-all-btn">Auto-Predict All</button>
+        <button class="btn btn-sm btn-primary" id="sim-all-btn">Load Actual RP</button>
         <button class="btn btn-sm btn-secondary" id="sim-reset-btn">Reset</button>
       </div>
       <div class="sim-rp-rules">RP = Movement + Goal + Pattern + 3(Win)/1(Tie) · range 0-6 · [MGP] = RPs earned</div>
@@ -274,26 +264,15 @@ async function simulator() {
     document.getElementById('sim-all-btn')?.addEventListener('click', () => {
       schedule.forEach(m => {
         if (m.scoreRedFinal !== null) {
-          // Played: use actual RP from FTC scores data
+          // Played: use actual RP from scores data
           const rp = actualRPFor(m);
           sim[m.matchNumber] = rp != null ? rp : 3;
         } else {
-          // Unplayed: predict from OPR
-          const pred = predictMatch(m);
-          const ourTeam = m.teams?.find(t => t.teamNumber == TEAM_NUMBER);
-          if (ourTeam) {
-            const ourA = ourTeam.station?.startsWith('Red') ? 'Red' : 'Blue';
-            const ourWin = ourA === pred.winner;
-            const tossup = pred.winner === 'Tie';
-            if (pred.confidence >= 70) sim[m.matchNumber] = ourWin ? 5 : tossup ? 3 : 1;
-            else if (pred.confidence >= 40) sim[m.matchNumber] = ourWin ? 4 : tossup ? 3 : 2;
-            else sim[m.matchNumber] = 3;
-          } else {
-            sim[m.matchNumber] = 3;
-          }
+          // Unplayed: neutral default (no OPR favoring)
+          sim[m.matchNumber] = 3;
         }
       });
-      showToast('All matches auto-predicted');
+      showToast('Filled actual RP for played matches');
       renderScheduleTab();
     });
     document.getElementById('sim-reset-btn')?.addEventListener('click', () => {
