@@ -177,11 +177,11 @@ input,select,textarea{font-family:var(--font)}
 .sim-rp-rules{font-size:.58rem;font-family:var(--mono);color:var(--text3);text-align:center;margin-bottom:.6rem;padding:.35rem .5rem;background:var(--bg3);border-radius:var(--rs);border:1px solid var(--border)}
 
 /* Sim: RP control column (right side of match row) */
-.sim-ctrl-col{display:flex;flex-direction:column;align-items:flex-end;min-width:105px;gap:2px}
+.sim-ctrl-col{display:flex;flex-direction:column;align-items:flex-end;min-width:105px;gap:3px}
 .sim-rp-row{display:flex;align-items:center;gap:4px}
-.sim-rp-btn{width:26px;height:26px;border-radius:6px;background:var(--bg2);border:1px solid var(--border);color:var(--text);font-size:1rem;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .1s,border-color .1s}
+.sim-rp-btn{width:22px;height:22px;border-radius:5px;background:var(--bg2);border:1px solid var(--border);color:var(--text);font-size:.9rem;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .1s,border-color .1s;padding:0}
 .sim-rp-btn:active{background:var(--bhi);border-color:var(--bhi)}
-.sim-rp-num{min-width:22px;text-align:center;font-family:var(--mono);font-size:1.15rem;font-weight:800;line-height:1}
+.sim-rp-num{min-width:22px;text-align:center;font-family:var(--mono);font-size:1rem;font-weight:800;line-height:1}
 .sim-auto-btn{padding:2px 7px;border-radius:4px;font-size:.6rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;background:var(--bg2);border:1px solid var(--border);color:var(--accent2);cursor:pointer;transition:all .12s;font-family:var(--mono)}
 .sim-auto-btn:active{background:rgba(71,200,255,.15);border-color:var(--accent2)}
 .sim-rp-label{font-size:.58rem;font-family:var(--mono);font-weight:600}
