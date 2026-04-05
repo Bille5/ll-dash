@@ -208,18 +208,15 @@ function computeMatchRP(a, isWinner, isTie) {
 function pairChip(label, r, b) {
   return `<span class="pair-chip"><span class="pc-lbl">${label}</span><span class="pc-r">${r}</span><span class="pc-sep">·</span><span class="pc-b">${b}</span></span>`;
 }
+// NOTE: `series` here is derived from the hybrid schedule and is not the FTC
+// API's canonical `field` string. For the real per-match field assignment,
+// call /api/schedule-fields (backend proxies the non-hybrid schedule endpoint).
 function fieldChip(series) {
   return series != null ? `<span class="pair-chip pair-chip-field">F${series + 1}</span>` : '';
 }
-// RP summary chip with optional [MGP] letter tags per alliance
-function rpPairChip(redRP, blueRP, redA, blueA) {
-  const tags = a => {
-    if (!a) return '';
-    const f = allianceRPFlags(a);
-    return (f.movement?'M':'') + (f.goal?'G':'') + (f.pattern?'P':'');
-  };
-  const rt = tags(redA), bt = tags(blueA);
-  return `<span class="pair-chip"><span class="pc-lbl">RP</span><span class="pc-r">${redRP}${rt?`<span class="pc-tag">${rt}</span>`:''}</span><span class="pc-sep">·</span><span class="pc-b">${blueRP}${bt?`<span class="pc-tag">${bt}</span>`:''}</span></span>`;
+// RP summary chip: "RP <red> · <blue>"
+function rpPairChip(redRP, blueRP) {
+  return `<span class="pair-chip"><span class="pc-lbl">RP</span><span class="pc-r">${redRP}</span><span class="pc-sep">·</span><span class="pc-b">${blueRP}</span></span>`;
 }
 
 // Make openTeamModal globally callable from onclick attributes

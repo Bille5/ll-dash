@@ -100,6 +100,15 @@ def get_hybrid_schedule(season, event_code, level='qual'):
     return _get(f"{FTC_BASE}/{season}/schedule/{event_code}/{level}/hybrid")
 
 
+def get_schedule_basic(season, event_code, level='qual'):
+    """Non-hybrid schedule endpoint. Unlike /hybrid, this response may include
+    an explicit per-match `field` string (e.g. "Field 1") from the FTC API.
+    Shape: {schedule:[{description, field, tournamentLevel, startTime,
+                      matchNumber, teams:[{teamNumber,station,...}]}]}
+    """
+    return _get(f"{FTC_BASE}/{season}/schedule/{event_code}/{level}")
+
+
 def get_match_scores(season, event_code, level='qual'):
     return _get(f"{FTC_BASE}/{season}/scores/{event_code}/{level}")
 
