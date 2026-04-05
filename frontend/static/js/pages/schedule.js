@@ -112,23 +112,14 @@ async function schedule() {
         scoreHtml=`<div class="match-time">${formatTime(m.startTime)}</div>`;
       }
 
-      // Per-match RP breakdown (from FTC API scores data, played matches only)
+      // Per-match RP breakdown (from FTCScout GraphQL, played matches only)
       let rpLine = '';
       if (played && scoresMap[m.matchNumber]) {
         const sc = scoresMap[m.matchNumber];
         const isTie = !m.redWins && !m.blueWins;
         const redRP  = computeMatchRP(sc.red,  m.redWins,  isTie);
         const blueRP = computeMatchRP(sc.blue, m.blueWins, isTie);
-        const tags = a => {
-          if (!a) return '';
-          const f = allianceRPFlags(a);
-          const parts = [];
-          if (f.movement) parts.push('M');
-          if (f.goal)     parts.push('G');
-          if (f.pattern)  parts.push('P');
-          return parts.length ? ` <span style="opacity:.6">[${parts.join('')}]</span>` : '';
-        };
-        rpLine = `<span>RP <span style="color:#ff8a94">${redRP}${tags(sc.red)}</span> · <span style="color:var(--accent2)">${blueRP}${tags(sc.blue)}</span></span>`;
+        rpLine = rpPairChip(redRP, blueRP, sc.red, sc.blue);
       }
 
       // OPR prediction for all matches
@@ -155,14 +146,14 @@ async function schedule() {
 
       const subStats = played
         ? `<div class="match-sub-stats">
-            <span>Auto R:${m.scoreRedAuto??'?'} B:${m.scoreBlueAuto??'?'}</span>
-            ${(m.scoreRedFoul||m.scoreBlueFoul)?`<span>Fouls R:${m.scoreRedFoul} B:${m.scoreBlueFoul}</span>`:''}
-            ${fieldNum?`<span>${fieldNum}</span>`:''}
+            ${pairChip('Auto', m.scoreRedAuto??'?', m.scoreBlueAuto??'?')}
+            ${(m.scoreRedFoul||m.scoreBlueFoul)?pairChip('Foul', m.scoreRedFoul||0, m.scoreBlueFoul||0):''}
             ${rpLine}
+            ${fieldChip(m.series)}
            </div>
            ${predLine ? `<div class="match-sub-stats">${predLine}</div>` : ''}`
         : `<div class="match-sub-stats">
-            ${fieldNum?`<span>${fieldNum}</span>`:''}
+            ${fieldChip(m.series)}
             ${predLine}
            </div>`;
 
