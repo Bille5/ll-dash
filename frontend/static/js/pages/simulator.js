@@ -114,53 +114,49 @@ async function simulator() {
 
     schedule.forEach(m => {
       const played = m.scoreRedFinal !== null;
-      // Skip unplayed matches that have no user-set RP — they don't count.
-      if (!played && sim[m.matchNumber] == null) return;
       const redTeams  = (m.teams || []).filter(t => t.station?.startsWith('Red'));
       const blueTeams = (m.teams || []).filter(t => t.station?.startsWith('Blue'));
 
-      // Determine winner for this match
-      let redWin, blueWin;
+      let redRP, blueRP, redWon, blueWon, tied;
+
       if (played) {
-        redWin = m.redWins === true;
-        blueWin = m.blueWins === true;
+        const sc = scoresMap[m.matchNumber];
+        tied = m.redWins === false && m.blueWins === false;
+        redWon = !!m.redWins;
+        blueWon = !!m.blueWins;
+        redRP  = sc ? computeMatchRP(sc.red,  redWon,  tied) : (redWon ? 3 : tied ? 1 : 0);
+        blueRP = sc ? computeMatchRP(sc.blue, blueWon, tied) : (blueWon ? 3 : tied ? 1 : 0);
       } else {
-        // Unplayed but user-set: infer result from our team's sim RP
+        // Unplayed: only count if our team is in the match AND user has set a sim RP
         const ourTeam = m.teams?.find(t => t.teamNumber == TEAM_NUMBER);
-        const rp = sim[m.matchNumber];
-        const ourWon = rp >= 3;
-        const ourTied = rp >= 1 && rp < 3;
-        if (ourTeam) {
-          const ourA = ourTeam.station?.startsWith('Red') ? 'Red' : 'Blue';
-          redWin  = ourA === 'Red' ? ourWon : (!ourWon && !ourTied);
-          blueWin = ourA === 'Blue' ? ourWon : (!ourWon && !ourTied);
-          if (ourTied) { redWin = false; blueWin = false; }
+        if (!ourTeam || sim[m.matchNumber] == null) return;
+        const ourRP = sim[m.matchNumber];
+        const ourWin = ourRP >= 3;
+        const ourTie = ourRP >= 1 && ourRP < 3;
+        const ourA = ourTeam.station?.startsWith('Red') ? 'Red' : 'Blue';
+        tied = ourTie;
+        if (ourA === 'Red') {
+          redRP  = ourRP;
+          blueRP = ourWin ? 0 : ourTie ? 1 : 3;
+          redWon = ourWin; blueWon = !ourWin && !ourTie;
         } else {
-          // Our team not in this match: just attribute a neutral outcome (tie)
-          redWin = false; blueWin = false;
+          blueRP = ourRP;
+          redRP  = ourWin ? 0 : ourTie ? 1 : 3;
+          blueWon = ourWin; redWon = !ourWin && !ourTie;
         }
       }
 
-      const applyTeam = (t, isRedSide) => {
+      const apply = (t, allianceRP, won, lost) => {
         if (teamRP[t.teamNumber] == null) return;
-        const isOurs = t.teamNumber == TEAM_NUMBER;
-        const won = isRedSide ? redWin : blueWin;
-        const lost = isRedSide ? blueWin : redWin;
         teamPlayed[t.teamNumber]++;
-        if (isOurs) {
-          teamRP[t.teamNumber] += sim[m.matchNumber];
-          if (sim[m.matchNumber] >= 3) teamWins[t.teamNumber]++;
-          else if (sim[m.matchNumber] <= 1) teamLosses[t.teamNumber]++;
-          else teamTies[t.teamNumber]++;
-        } else {
-          if (won) { teamRP[t.teamNumber] += 3; teamWins[t.teamNumber]++; }
-          else if (lost) { teamLosses[t.teamNumber]++; }
-          else { teamRP[t.teamNumber] += 1; teamTies[t.teamNumber]++; }
-        }
+        teamRP[t.teamNumber] += allianceRP;
+        if (tied) teamTies[t.teamNumber]++;
+        else if (won) teamWins[t.teamNumber]++;
+        else if (lost) teamLosses[t.teamNumber]++;
       };
 
-      redTeams.forEach(t => applyTeam(t, true));
-      blueTeams.forEach(t => applyTeam(t, false));
+      redTeams.forEach(t  => apply(t, redRP,  redWon,  blueWon));
+      blueTeams.forEach(t => apply(t, blueRP, blueWon, redWon));
     });
 
     // Build projected rankings
