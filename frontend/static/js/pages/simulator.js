@@ -240,10 +240,9 @@ async function simulator() {
 
     document.getElementById('sim-tab-content').innerHTML = `
       <div class="sim-top-bar">
-        <button class="btn btn-sm btn-primary" id="sim-all-btn">Load Actual RP</button>
         <button class="btn btn-sm btn-secondary" id="sim-reset-btn">Reset</button>
       </div>
-      <div class="sim-rp-rules">RP = Movement + Goal + Pattern + 3(Win)/1(Tie) · range 0-6 · [MGP] = RPs earned</div>
+      <div class="sim-rp-rules">RP = Movement + Goal + Pattern + 3(Win)/1(Tie) · range 0-6</div>
       ${schedule.length ? matchRows : '<div class="empty-state" style="padding:1.5rem"><div>No matches found.</div></div>'}
     `;
 
@@ -269,19 +268,6 @@ async function simulator() {
         s[side] = Math.min(6, s[side] + 1);
         renderScheduleTab();
       });
-    });
-    document.getElementById('sim-all-btn')?.addEventListener('click', () => {
-      schedule.forEach(m => {
-        if (m.scoreRedFinal !== null) {
-          const sc = scoresMap[m.matchNumber];
-          const isTie = m.redWins === false && m.blueWins === false;
-          const rR = sc ? computeMatchRP(sc.red,  m.redWins,  isTie) : (m.redWins ? 3 : isTie ? 1 : 0);
-          const bR = sc ? computeMatchRP(sc.blue, m.blueWins, isTie) : (m.blueWins ? 3 : isTie ? 1 : 0);
-          sim[m.matchNumber] = { red: rR, blue: bR, played: true };
-        }
-      });
-      showToast('Loaded actual RP for played matches');
-      renderScheduleTab();
     });
     document.getElementById('sim-reset-btn')?.addEventListener('click', () => {
       schedule.forEach(m => {
