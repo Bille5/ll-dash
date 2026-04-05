@@ -208,6 +208,9 @@ function computeMatchRP(a, isWinner, isTie) {
 function pairChip(label, r, b) {
   return `<span class="pair-chip"><span class="pc-lbl">${label}</span><span class="pc-r">${r}</span><span class="pc-sep">·</span><span class="pc-b">${b}</span></span>`;
 }
+// NOTE: `series` here is derived from the hybrid schedule and is not the FTC
+// API's canonical `field` string. For the real per-match field assignment,
+// call /api/schedule-fields (backend proxies the non-hybrid schedule endpoint).
 function fieldChip(series) {
   return series != null ? `<span class="pair-chip pair-chip-field">F${series + 1}</span>` : '';
 }

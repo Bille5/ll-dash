@@ -72,6 +72,37 @@ def get_schedule():
     level  = request.args.get('level', 'qual')
     return jsonify(ftc_api.get_hybrid_schedule(season, event, level) or {'schedule': []})
 
+@api_bp.route('/schedule-fields', methods=['GET'])
+def get_schedule_fields():
+    """Non-breaking companion to /schedule. Returns only the field assignment
+    per match (from the non-hybrid FTC schedule endpoint, which does expose
+    `field`). The existing /schedule endpoint is untouched.
+    """
+    event, err = _require_event()
+    if err: return err
+    season = request.args.get('season', _season())
+    level  = request.args.get('level', 'qual')
+    data   = ftc_api.get_schedule_basic(season, event, level) or {}
+    sched  = data.get('schedule') or data.get('Schedule') or []
+    matches = []
+    fields_by_match = {}
+    for m in sched:
+        mn = m.get('matchNumber')
+        if mn is None:
+            continue
+        # `field` key on the non-hybrid endpoint is the canonical FTC value.
+        # Fall back to None silently — do not synthesize.
+        fld = m.get('field')
+        matches.append({
+            'matchNumber': mn,
+            'description': m.get('description'),
+            'field': fld,
+        })
+        if fld:
+            fields_by_match[str(mn)] = fld
+    return jsonify({'matches': matches, 'fieldsByMatch': fields_by_match})
+
+
 @api_bp.route('/matches', methods=['GET'])
 def get_matches():
     event, err = _require_event()
