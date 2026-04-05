@@ -67,15 +67,15 @@ async function simulator() {
     return won ? 3 : isTie ? 1 : 0;
   }
 
-  // Sim state: RP per match (all matches, played + unplayed)
+  // Sim state: RP per match. Played matches: actual RP. Unplayed: null until the
+  // user sets one (we don't fabricate defaults so unset matches aren't counted).
   const sim = {};
   schedule.forEach(m => {
     if (m.scoreRedFinal !== null) {
-      // Played match: use actual RP from FTC scores data
       const rp = actualRPFor(m);
-      sim[m.matchNumber] = rp != null ? rp : 3;
+      sim[m.matchNumber] = rp != null ? rp : 0;
     } else {
-      sim[m.matchNumber] = 3; // unplayed default
+      sim[m.matchNumber] = null;
     }
   });
 
@@ -114,6 +114,8 @@ async function simulator() {
 
     schedule.forEach(m => {
       const played = m.scoreRedFinal !== null;
+      // Skip unplayed matches that have no user-set RP — they don't count.
+      if (!played && sim[m.matchNumber] == null) return;
       const redTeams  = (m.teams || []).filter(t => t.station?.startsWith('Red'));
       const blueTeams = (m.teams || []).filter(t => t.station?.startsWith('Blue'));
 
@@ -123,9 +125,20 @@ async function simulator() {
         redWin = m.redWins === true;
         blueWin = m.blueWins === true;
       } else {
-        const pred = predictMatch(m);
-        redWin = pred.winner === 'Red';
-        blueWin = pred.winner === 'Blue';
+        // Unplayed but user-set: infer result from our team's sim RP
+        const ourTeam = m.teams?.find(t => t.teamNumber == TEAM_NUMBER);
+        const rp = sim[m.matchNumber];
+        const ourWon = rp >= 3;
+        const ourTied = rp >= 1 && rp < 3;
+        if (ourTeam) {
+          const ourA = ourTeam.station?.startsWith('Red') ? 'Red' : 'Blue';
+          redWin  = ourA === 'Red' ? ourWon : (!ourWon && !ourTied);
+          blueWin = ourA === 'Blue' ? ourWon : (!ourWon && !ourTied);
+          if (ourTied) { redWin = false; blueWin = false; }
+        } else {
+          // Our team not in this match: just attribute a neutral outcome (tie)
+          redWin = false; blueWin = false;
+        }
       }
 
       const applyTeam = (t, isRedSide) => {
@@ -135,7 +148,6 @@ async function simulator() {
         const lost = isRedSide ? blueWin : redWin;
         teamPlayed[t.teamNumber]++;
         if (isOurs) {
-          // Our team uses sim RP directly
           teamRP[t.teamNumber] += sim[m.matchNumber];
           if (sim[m.matchNumber] >= 3) teamWins[t.teamNumber]++;
           else if (sim[m.matchNumber] <= 1) teamLosses[t.teamNumber]++;
@@ -187,7 +199,11 @@ async function simulator() {
       const blue    = (m.teams || []).filter(t => t.station?.startsWith('Blue'));
 
       const rp = sim[m.matchNumber];
-      const rpColor = rp >= 4 ? 'var(--accent)' : rp >= 3 ? 'var(--green)' : rp >= 1 ? 'var(--yellow)' : 'var(--red)';
+      const rpUnset = rp == null;
+      const rpColor = rpUnset ? 'var(--text3)'
+        : rp >= 4 ? 'var(--accent)' : rp >= 3 ? 'var(--green)' : rp >= 1 ? 'var(--yellow)' : 'var(--red)';
+      const rpDisplay = rpUnset ? '—' : rp;
+      const rpLabelText = rpUnset ? 'not set' : `${rp} RP`;
 
       let winBadge = '';
       let subStats = '';
@@ -229,10 +245,10 @@ async function simulator() {
           <div class="sim-ctrl-col">
             <div class="sim-rp-row">
               <button class="sim-rp-btn sim-rp-minus" data-match="${m.matchNumber}">-</button>
-              <div class="sim-rp-num" style="color:${rpColor}">${rp}</div>
+              <div class="sim-rp-num" style="color:${rpColor}">${rpDisplay}</div>
               <button class="sim-rp-btn sim-rp-plus" data-match="${m.matchNumber}">+</button>
             </div>
-            <div class="sim-rp-label" style="color:${rpColor}">${rp} RP</div>
+            <div class="sim-rp-label" style="color:${rpColor}">${rpLabelText}</div>
           </div>
         </div>`;
     }).join('');
@@ -246,46 +262,44 @@ async function simulator() {
       ${schedule.length ? matchRows : '<div class="empty-state" style="padding:1.5rem"><div>No matches found.</div></div>'}
     `;
 
-    // Bind RP buttons
+    // Bind RP buttons — first click on an unset match initializes it.
     document.querySelectorAll('.sim-rp-minus').forEach(btn => {
       btn.addEventListener('click', () => {
         const mn = parseInt(btn.dataset.match);
-        sim[mn] = Math.max(0, sim[mn] - 1);
+        if (sim[mn] == null) sim[mn] = 0;
+        else sim[mn] = Math.max(0, sim[mn] - 1);
         renderScheduleTab();
       });
     });
     document.querySelectorAll('.sim-rp-plus').forEach(btn => {
       btn.addEventListener('click', () => {
         const mn = parseInt(btn.dataset.match);
-        sim[mn] = Math.min(6, sim[mn] + 1);
+        if (sim[mn] == null) sim[mn] = 1;
+        else sim[mn] = Math.min(6, sim[mn] + 1);
         renderScheduleTab();
       });
     });
     document.getElementById('sim-all-btn')?.addEventListener('click', () => {
       schedule.forEach(m => {
         if (m.scoreRedFinal !== null) {
-          // Played: use actual RP from scores data
           const rp = actualRPFor(m);
-          sim[m.matchNumber] = rp != null ? rp : 3;
-        } else {
-          // Unplayed: neutral default (no OPR favoring)
-          sim[m.matchNumber] = 3;
+          sim[m.matchNumber] = rp != null ? rp : 0;
         }
       });
-      showToast('Filled actual RP for played matches');
+      showToast('Loaded actual RP for played matches');
       renderScheduleTab();
     });
     document.getElementById('sim-reset-btn')?.addEventListener('click', () => {
       schedule.forEach(m => {
         if (m.scoreRedFinal !== null) {
           const rp = actualRPFor(m);
-          sim[m.matchNumber] = rp != null ? rp : 3;
+          sim[m.matchNumber] = rp != null ? rp : 0;
         } else {
-          sim[m.matchNumber] = 3;
+          sim[m.matchNumber] = null;
         }
       });
       renderScheduleTab();
-      showToast('Reset to defaults');
+      showToast('Unplayed matches cleared');
     });
   }
 
