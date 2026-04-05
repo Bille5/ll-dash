@@ -8,23 +8,21 @@ async function simulator() {
   loadingPage();
 
   const season = appSettings.active_season || 2025;
-  const [rankData, schedData, oprResult, matchScoresData] = await Promise.all([
+  const [rankData, schedData, oprResult, matchRpData] = await Promise.all([
     API.getRankings().catch(()=>null),
     API.getSchedule('qual').catch(()=>null),
     API.ftcscoutEventOprs(appSettings.active_event_code, season).catch(()=>null),
-    API.getMatches('qual').catch(()=>null),
+    API.ftcscoutEventMatchRP(appSettings.active_event_code, season).catch(()=>null),
   ]);
 
   const rankings = rankData?.rankings || rankData?.Rankings || [];
   const schedule = schedData?.schedule || [];
 
-  // Build per-match alliance scores map (movementRp/goalRp/patternRp)
+  // Build per-match alliance scores map from FTCScout GraphQL (movementRp/goalRp/patternRp)
   const scoresMap = {};
-  const msList = matchScoresData?.MatchScores || matchScoresData?.matchScores || [];
-  msList.forEach(ms => {
-    const red  = (ms.alliances || []).find(a => a.alliance === 'Red');
-    const blue = (ms.alliances || []).find(a => a.alliance === 'Blue');
-    scoresMap[ms.matchNumber] = { red, blue };
+  (matchRpData?.matches || []).forEach(ms => {
+    if (ms.tournamentLevel && ms.tournamentLevel !== 'Quals' && ms.tournamentLevel !== 'qual') return;
+    scoresMap[ms.matchNum] = { red: ms.red, blue: ms.blue };
   });
 
   if (!rankings.length) {
