@@ -113,9 +113,9 @@ async function dashboard() {
           <span style="font-family:var(--mono);font-size:.95rem;font-weight:800;color:${resultColor}">${resultLabel}</span>
         </div>
         <div style="display:flex;align-items:center;justify-content:center;gap:.5rem;margin-bottom:.45rem">
-          <div style="font-family:var(--mono);font-size:2rem;font-weight:800;color:${resultColor};line-height:1">${oS}</div>
+          <div style="font-family:var(--mono);font-size:2rem;font-weight:800;color:${last.redWins?'var(--green)':isTie?'var(--yellow)':'var(--red)'};line-height:1">${last.scoreRedFinal}</div>
           <div style="font-family:var(--mono);font-size:1rem;color:var(--text3)">–</div>
-          <div style="font-family:var(--mono);font-size:2rem;font-weight:800;color:var(--text2);line-height:1">${opS}</div>
+          <div style="font-family:var(--mono);font-size:2rem;font-weight:800;color:${last.blueWins?'var(--green)':isTie?'var(--yellow)':'var(--red)'};line-height:1">${last.scoreBlueFinal}</div>
         </div>
         <div style="display:flex;gap:.4rem;justify-content:center;flex-wrap:wrap;margin-bottom:.35rem">
           ${red.map(t=>teamChipNamed(t,'red')).join('')}
@@ -171,8 +171,7 @@ async function dashboard() {
       const red  = m.teams.filter(t=>t.station?.startsWith('Red'));
       const blue = m.teams.filter(t=>t.station?.startsWith('Blue'));
       const won  = weWon(m);
-      const oS=ourS(m), opS=oppS(m), oAuto=ourAuto(m);
-      const oppAuto = ourA(m)==='Red'?(m.scoreBlueAuto||0):(m.scoreRedAuto||0);
+      const isTie = m.redWins===false && m.blueWins===false;
       return `
         <div class="match-detail-row our-match" onclick="openMatchDetail(${m.matchNumber})" style="cursor:pointer">
           <div style="display:flex;align-items:center;gap:.6rem">
@@ -182,8 +181,8 @@ async function dashboard() {
               <div class="alliance-teams">${blue.map(t=>teamChipNamed(t,'blue')).join('')}</div>
             </div>
             <div style="text-align:right">
-              <div style="font-family:var(--mono);font-size:.88rem;font-weight:800;color:${won?'var(--green)':'var(--red)'}">${won?'WIN':'LOSS'}</div>
-              <div style="font-family:var(--mono);font-size:.75rem;color:var(--text2)">${oS}–${opS}</div>
+              <div style="font-family:var(--mono);font-size:.88rem;font-weight:800;color:${won?'var(--green)':isTie?'var(--yellow)':'var(--red)'}">${won?'WIN':isTie?'TIE':'LOSS'}</div>
+              <div style="font-family:var(--mono);font-size:.75rem"><span style="color:${m.redWins?'var(--green)':'var(--text2)'}">${m.scoreRedFinal}</span><span style="color:var(--text3)">–</span><span style="color:${m.blueWins?'var(--green)':'var(--text2)'}">${m.scoreBlueFinal}</span></div>
             </div>
           </div>
           <div class="match-sub-stats">
