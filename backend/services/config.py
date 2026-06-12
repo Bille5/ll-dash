@@ -42,6 +42,23 @@ DEFAULT_FLAG_CATEGORIES = [
     {'key': 'dnp',    'label': 'Do Not Pick', 'color': '#ff4757', 'icon': '🚫'},
 ]
 
+# ── Navigation / page visibility ──────────────────────────────
+NAV_PAGE_KEYS = ['dashboard', 'schedule', 'rankings', 'scouting', 'alliance',
+                 'simulator', 'hub', 'bigscreen', 'playoffs', 'awards']
+DEFAULT_NAV = [{'key': k, 'visible': True} for k in NAV_PAGE_KEYS]
+
+# ── Big Screen display config ─────────────────────────────────
+DEFAULT_BIGSCREEN = {
+    'panels': {'schedule': True, 'rankings': True, 'playoffs': True},
+    'cycle_seconds': 15,
+    'refresh_seconds': 45,
+}
+BS_CYCLE_RANGE = (5, 300)
+BS_REFRESH_RANGE = (10, 600)
+
+THEME_MODES = {'dark', 'light'}
+DENSITIES = {'normal', 'compact'}
+
 SCOUTING_FIELD_TYPES = {'text', 'textarea', 'number', 'select', 'stars'}
 
 # Field keys whose values are stored in dedicated ScoutingNote columns rather
@@ -123,6 +140,79 @@ def theme():
     return t
 
 
+def theme_mode():
+    m = get('theme_mode', default='dark')
+    return m if m in THEME_MODES else 'dark'
+
+
+def density():
+    d = get('density', default='normal')
+    return d if d in DENSITIES else 'normal'
+
+
+def nav_config():
+    """Ordered list of {key, visible}. Always contains every known page
+    exactly once, dashboard always visible, unknown keys dropped."""
+    raw = get_json('nav_config', DEFAULT_NAV)
+    cleaned, err = validate_nav_config(raw)
+    return cleaned if not err else list(DEFAULT_NAV)
+
+
+def validate_nav_config(items):
+    if not isinstance(items, list):
+        return None, 'Nav config must be an array'
+    cleaned, seen = [], set()
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        key = it.get('key')
+        if key not in NAV_PAGE_KEYS or key in seen:
+            continue
+        seen.add(key)
+        cleaned.append({'key': key, 'visible': bool(it.get('visible', True))})
+    for key in NAV_PAGE_KEYS:          # anything missing goes to the end
+        if key not in seen:
+            cleaned.append({'key': key, 'visible': True})
+    for it in cleaned:                 # dashboard can never be hidden
+        if it['key'] == 'dashboard':
+            it['visible'] = True
+    return cleaned, None
+
+
+def _clamp(v, lo, hi, default):
+    try:
+        return max(lo, min(hi, int(v)))
+    except (TypeError, ValueError):
+        return default
+
+
+def bigscreen_config():
+    raw = get_json('bigscreen_config', DEFAULT_BIGSCREEN)
+    cleaned, err = validate_bigscreen_config(raw)
+    return cleaned if not err else dict(DEFAULT_BIGSCREEN)
+
+
+def validate_bigscreen_config(cfg):
+    if not isinstance(cfg, dict):
+        return None, 'Big Screen config must be an object'
+    panels_in = cfg.get('panels') or {}
+    panels = {k: bool(panels_in.get(k, DEFAULT_BIGSCREEN['panels'][k]))
+              for k in DEFAULT_BIGSCREEN['panels']}
+    if not any(panels.values()):
+        return None, 'At least one Big Screen panel must be enabled'
+    return {
+        'panels': panels,
+        'cycle_seconds':   _clamp(cfg.get('cycle_seconds'),   *BS_CYCLE_RANGE,
+                                  default=DEFAULT_BIGSCREEN['cycle_seconds']),
+        'refresh_seconds': _clamp(cfg.get('refresh_seconds'), *BS_REFRESH_RANGE,
+                                  default=DEFAULT_BIGSCREEN['refresh_seconds']),
+    }, None
+
+
+def awards_highlight_ours():
+    return get('awards_highlight_ours', default='1') != '0'
+
+
 def branding():
     """Branding info for templates / the manifest. Never raises — falls back
     to defaults if the database isn't reachable yet (e.g. first boot)."""
@@ -130,8 +220,11 @@ def branding():
         name = dashboard_name()
         thm = theme()
         team = team_number()
+        mode = theme_mode()
+        dens = density()
     except Exception:
         name, thm, team = DEFAULT_DASHBOARD_NAME, dict(DEFAULT_THEME), None
+        mode, dens = 'dark', 'normal'
         thm['bg2'] = _shade(thm['bg'], 8)
         thm['bg3'] = _shade(thm['bg'], 15)
     parts = str(name).strip().split(None, 1)
@@ -141,6 +234,8 @@ def branding():
         'name_rest': parts[1] if len(parts) > 1 else '',
         'theme': thm,
         'team_number': team,
+        'theme_mode': mode,
+        'density': dens,
     }
 
 

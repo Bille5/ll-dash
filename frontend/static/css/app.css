@@ -351,3 +351,61 @@ body.bigscreen-mode .page-container{margin-top:0;padding:0}
 .bs-rank-wl{color:var(--text2)}
 .bs-attribution{padding-top:.4vw}
 
+/* ── Light mode ───
+   Theme colors (--accent/--accent2/--bg…) stay user-driven; light mode
+   flips the text/border relationships layered on top of them. */
+html.light{--text:#16161c;--text2:#5a5a66;--text3:#9a9aa4;--border:rgba(0,0,0,.1);--bhi:rgba(0,0,0,.24)}
+html.light .modal-backdrop{background:rgba(0,0,0,.35)}
+html.light .team-chip.red{color:#c4313f}
+html.light .bs-chip.red{color:#c4313f}
+html.light .bs-score-r{color:#c4313f}
+html.light .pair-chip .pc-r{color:#c4313f}
+html.light .red-score{color:#c4313f}
+html.light .match-score .red-score{color:#c4313f}
+
+/* ── Compact density: everything is rem-based, so shrinking the root
+   font size tightens fonts and padding together. */
+html.compact{font-size:13.5px}
+
+/* ── Segmented toggles + theme presets (Settings → Display) ─── */
+.seg-toggle{display:flex;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);overflow:hidden}
+.seg-toggle button{padding:.45rem .8rem;font-size:.75rem;font-weight:600;color:var(--text2);background:transparent;border:none}
+.seg-toggle button.on{background:var(--accent);color:var(--bg);font-weight:700}
+.preset-row{display:flex;gap:.45rem;flex-wrap:wrap}
+.preset-chip{display:flex;align-items:center;gap:.35rem;padding:.4rem .6rem;border-radius:var(--rs);border:1.5px solid;cursor:pointer;transition:transform .1s}
+.preset-chip:active{transform:scale(.95)}
+.preset-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.preset-name{font-size:.68rem;font-weight:700}
+
+/* ── Playoffs page ─── */
+.po-alliance-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.5rem}
+.po-alliance{background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:.55rem}
+.po-alliance.po-ours{border-color:var(--accent)}
+.po-alliance-num{font-family:var(--mono);font-weight:800;font-size:.95rem;color:var(--accent);margin-bottom:.35rem}
+.po-member{display:flex;align-items:baseline;gap:.4rem;padding:.15rem 0;cursor:pointer}
+.po-member.our .po-member-num{color:var(--accent)}
+.po-member-num{font-family:var(--mono);font-weight:700;font-size:.8rem}
+.po-member-name{flex:1;font-size:.68rem;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.po-member-role{font-size:.56rem;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:.05em}
+.po-abadge{font-family:var(--mono);font-size:.62rem;font-weight:800;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 4px;margin-right:2px;align-self:center}
+.po-win-tag{display:block;font-family:var(--mono);font-size:.58rem;font-weight:800;letter-spacing:.04em;margin-top:.2rem}
+
+/* ── Big Screen: playoffs panel ─── */
+.bs-round-label{font-family:var(--mono);font-size:clamp(.6rem,.9vw,.9rem);font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin:.8vw 0 .4vw}
+.bs-abadge{font-family:var(--mono);font-size:clamp(.6rem,.85vw,.85rem);font-weight:800;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:.1vw .35vw;align-self:center}
+.bs-alliance-strip{display:flex;gap:.6vw;flex-wrap:wrap;margin-bottom:.7vw}
+.bs-alliance-chip{font-family:var(--mono);font-size:clamp(.6rem,.85vw,.85rem);color:var(--text2);background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:.2vw .5vw}
+.bs-alliance-chip strong{color:var(--accent)}
+.bs-alliance-chip.bs-ours{border-color:var(--accent)}
+
+/* ── Awards page ─── */
+.award-row{display:flex;align-items:baseline;gap:.55rem;padding:.5rem 0;border-bottom:1px solid var(--border)}
+.award-row:last-child{border-bottom:none}
+.award-series{font-family:var(--mono);font-size:.6rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);min-width:46px}
+.award-team{font-family:var(--mono);font-weight:800;font-size:.85rem}
+.award-name{font-size:.83rem;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.award-sub{font-size:.67rem;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:40%}
+.award-star{color:var(--accent);font-size:.9rem}
+.award-row.award-ours{background:linear-gradient(90deg,transparent,rgba(255,255,255,.03));border-left:3px solid var(--accent);padding-left:.5rem;margin-left:-.5rem}
+.award-row.award-ours .award-team,.award-row.award-ours .award-name{color:var(--accent)}
+

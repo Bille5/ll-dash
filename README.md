@@ -24,11 +24,19 @@ scouting workflow**. No code changes required.
 - **Alliance** — pick list with *custom flag categories* (name + color, e.g.
   Target / Do Not Pick / Sleeper), plus side-by-side team comparison.
 - **Simulator** — what-if qualification ranking projections.
+- **Playoffs** — alliance lineups and the playoff bracket grouped by round,
+  with scores and winner highlighting.
+- **Awards** — event awards grouped by judged/performance category, with your
+  team's awards highlighted.
 - **Hub** — team notes and pit/inspection checklists.
 - **Big Screen** — a high-contrast, auto-refreshing pit display (Display tab)
   showing the schedule with the current match highlighted, field assignments,
-  scores and rankings. Optional auto-cycling between panels. Press Esc or ✕
-  to exit.
+  scores, rankings and the playoff bracket. Panels, refresh interval and
+  auto-cycle interval are configurable. Press Esc or ✕ to exit.
+- **Deep display customization** — one-click theme presets, light/dark mode,
+  compact density, and full nav reordering/visibility per tab.
+- **Data export** — scouting notes (CSV/JSON with columns that follow your
+  scouting field schema), alliance flags and hub notes/checklists.
 - **PWA** — installable on phones, works as a home-screen app, offline-tolerant.
 
 ## Stack
@@ -91,9 +99,11 @@ All configuration lives in the `app_settings` table and is managed in-app:
 |---|---|
 | Setup wizard (first run) | FTC API credentials, team number, season, PIN, name, theme |
 | ⚙ Settings → Event | Season + active event (searchable) |
-| ⚙ Settings → Branding | Dashboard name, accent/secondary/background colors (live preview) |
+| ⚙ Settings → Display | Dashboard name, theme presets, custom colors (live preview), light/dark mode, compact density |
 | ⚙ Settings → Scout Fields | Add/remove/reorder scouting form fields |
 | ⚙ Settings → Flags | Custom alliance flag categories (name, color, emoji) |
+| ⚙ Settings → Pages | Nav tab order & visibility (incl. Playoffs/Awards), Big Screen panels + cycle/refresh intervals, award highlighting |
+| ⚙ Settings → Data | Export scouting notes, flags and hub data as CSV/JSON |
 | ⚙ Settings → Team & API | Team number, PIN, FTC API credentials |
 
 Environment variables (see [`.env.example`](.env.example)) are only needed for
