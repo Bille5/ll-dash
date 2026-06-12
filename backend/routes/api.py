@@ -27,6 +27,8 @@ def get_config():
         'dashboard_name': b['name'],
         'theme':          b['theme'],
         'team_number':    b['team_number'],
+        'theme_mode':     b['theme_mode'],
+        'density':        b['density'],
     })
 
 
@@ -98,6 +100,11 @@ def get_settings():
         'team_number':       config.team_number(),
         'dashboard_name':    config.dashboard_name(),
         'theme':             config.theme(),
+        'theme_mode':        config.theme_mode(),
+        'density':           config.density(),
+        'nav':               config.nav_config(),
+        'bigscreen':         config.bigscreen_config(),
+        'awards_highlight_ours': config.awards_highlight_ours(),
         'ftc_api_username':  username,
         'has_credentials':   bool(username and api_key),
     })
@@ -123,6 +130,26 @@ def update_settings():
         if not re.fullmatch(r'\d{4}', pin):
             return jsonify({'error': 'PIN must be 4 digits'}), 400
         AppSettings.set('team_pin', pin)
+    if data.get('theme_mode') is not None:
+        if data['theme_mode'] not in config.THEME_MODES:
+            return jsonify({'error': 'theme_mode must be dark or light'}), 400
+        AppSettings.set('theme_mode', data['theme_mode'])
+    if data.get('density') is not None:
+        if data['density'] not in config.DENSITIES:
+            return jsonify({'error': 'density must be normal or compact'}), 400
+        AppSettings.set('density', data['density'])
+    if data.get('nav_config') is not None:
+        nav, err = config.validate_nav_config(data['nav_config'])
+        if err:
+            return jsonify({'error': err}), 400
+        AppSettings.set('nav_config', json.dumps(nav))
+    if data.get('bigscreen_config') is not None:
+        bs, err = config.validate_bigscreen_config(data['bigscreen_config'])
+        if err:
+            return jsonify({'error': err}), 400
+        AppSettings.set('bigscreen_config', json.dumps(bs))
+    if data.get('awards_highlight_ours') is not None:
+        AppSettings.set('awards_highlight_ours', '1' if data['awards_highlight_ours'] else '0')
     return jsonify({'success': True})
 
 
@@ -229,6 +256,23 @@ def get_matches():
     season = request.args.get('season', _season())
     level  = request.args.get('level', 'qual')
     return jsonify(ftc_api.get_match_scores(season, event, level) or {'MatchScores': []})
+
+
+# Playoff variants — convenience aliases for /schedule and /matches with
+# level=playoff (FTC /schedule/{code}/playoff/hybrid and /scores/{code}/playoff)
+@api_bp.route('/playoff-schedule', methods=['GET'])
+def get_playoff_schedule():
+    event, err = _require_event()
+    if err: return err
+    season = request.args.get('season', _season())
+    return jsonify(ftc_api.get_hybrid_schedule(season, event, 'playoff') or {'schedule': []})
+
+@api_bp.route('/playoff-matches', methods=['GET'])
+def get_playoff_matches():
+    event, err = _require_event()
+    if err: return err
+    season = request.args.get('season', _season())
+    return jsonify(ftc_api.get_match_scores(season, event, 'playoff') or {'MatchScores': []})
 
 @api_bp.route('/oprs', methods=['GET'])
 def get_oprs():
@@ -416,6 +460,93 @@ def add_checklist():
     db.session.add(c)
     db.session.commit()
     return jsonify(c.to_dict()), 201
+
+
+# ── Data export ───────────────────────────────────────────────
+import csv
+import io
+from flask import Response
+
+def _export_response(rows, headers, fmt, filename):
+    """rows: list of dicts keyed by header. fmt: csv|json."""
+    if fmt == 'csv':
+        buf = io.StringIO()
+        w = csv.DictWriter(buf, fieldnames=headers, extrasaction='ignore')
+        w.writeheader()
+        w.writerows(rows)
+        return Response(buf.getvalue(), mimetype='text/csv', headers={
+            'Content-Disposition': f'attachment; filename="{filename}.csv"'})
+    return Response(json.dumps(rows, indent=2, default=str), mimetype='application/json', headers={
+        'Content-Disposition': f'attachment; filename="{filename}.json"'})
+
+@api_bp.route('/export/scouting', methods=['GET'])
+@require_auth
+def export_scouting():
+    fmt = request.args.get('format', 'csv')
+    q = ScoutingNote.query
+    scope = 'all'
+    if request.args.get('all') != '1':
+        season = int(request.args.get('season', _season()))
+        event  = request.args.get('event', _event())
+        q = q.filter_by(season=season, event_code=event)
+        scope = event or 'event'
+    notes = q.order_by(ScoutingNote.team_number, ScoutingNote.created_at).all()
+
+    # Columns follow the configured scouting field schema: legacy keys come
+    # from dedicated DB columns, custom fields from the notes JSON blob.
+    fields = config.scouting_fields()
+    base = ['id', 'season', 'event_code', 'team_number', 'match_number', 'scout_name', 'created_at']
+    field_keys = [f['key'] for f in fields]
+    extra_keys = []          # values saved under keys no longer in the schema
+    rows = []
+    for n in notes:
+        d = n.to_dict()
+        row = {k: d.get(k) for k in base}
+        try:
+            blob = json.loads(n.notes) if n.notes else {}
+            if not isinstance(blob, dict):
+                blob = {'other': n.notes}
+        except (ValueError, TypeError):
+            blob = {'other': n.notes}
+        for f in fields:
+            k = f['key']
+            row[k] = d.get(k) if k in config.LEGACY_SCOUT_KEYS else blob.get(k)
+        for k, v in blob.items():
+            if k not in field_keys and k not in base:
+                if k not in extra_keys:
+                    extra_keys.append(k)
+                row[k] = v
+        rows.append(row)
+    return _export_response(rows, base + field_keys + extra_keys, fmt, f'scouting-{scope}')
+
+@api_bp.route('/export/flags', methods=['GET'])
+@require_auth
+def export_flags():
+    fmt = request.args.get('format', 'csv')
+    q = AllianceFlag.query
+    scope = 'all'
+    if request.args.get('all') != '1':
+        season = int(request.args.get('season', _season()))
+        event  = request.args.get('event', _event())
+        q = q.filter_by(season=season, event_code=event)
+        scope = event or 'event'
+    labels = {c['key']: c['label'] for c in config.flag_categories()}
+    rows = [{
+        'season': f.season, 'event_code': f.event_code, 'team_number': f.team_number,
+        'flag': f.flag, 'flag_label': labels.get(f.flag, f.flag), 'pick_order': f.pick_order,
+    } for f in q.order_by(AllianceFlag.team_number).all()]
+    headers = ['season', 'event_code', 'team_number', 'flag', 'flag_label', 'pick_order']
+    return _export_response(rows, headers, fmt, f'flags-{scope}')
+
+@api_bp.route('/export/hub', methods=['GET'])
+@require_auth
+def export_hub():
+    data = {
+        'notes':      [n.to_dict() for n in TeamNote.query.order_by(TeamNote.created_at).all()],
+        'checklists': [c.to_dict() for c in Checklist.query.order_by(Checklist.created_at).all()],
+    }
+    return Response(json.dumps(data, indent=2, default=str), mimetype='application/json', headers={
+        'Content-Disposition': 'attachment; filename="hub.json"'})
 
 
 # ── FTCScout proxy ────────────────────────────────────────────

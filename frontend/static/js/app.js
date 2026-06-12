@@ -23,6 +23,32 @@ const DEFAULT_SCOUTING_FIELDS = [
 // Values for these keys live in dedicated DB columns, not the notes JSON
 const LEGACY_SCOUT_KEYS = ['driver_rating','auto_score','teleop_score','endgame_score','penalties'];
 
+// All pages the bottom nav can show, in default order
+const NAV_PAGES = {
+  dashboard: { icon:'◈', label:'Dash' },
+  schedule:  { icon:'◷', label:'Schedule' },
+  rankings:  { icon:'◬', label:'Rankings' },
+  scouting:  { icon:'◉', label:'Scout' },
+  alliance:  { icon:'⬡', label:'Alliance' },
+  simulator: { icon:'▲', label:'Sim' },
+  hub:       { icon:'⊞', label:'Hub' },
+  bigscreen: { icon:'⛶', label:'Display' },
+  playoffs:  { icon:'🏁', label:'Playoffs' },
+  awards:    { icon:'🏆', label:'Awards' },
+};
+const DEFAULT_NAV_CONFIG = Object.keys(NAV_PAGES).map(key => ({key, visible:true}));
+
+// One-click theme presets — they just populate the accent/accent2/bg pickers
+const THEME_PRESETS = [
+  { name:'Classic Dark',  mode:'dark',  accent:'#e8ff47', accent2:'#47c8ff', bg:'#0a0a0f' },
+  { name:'High Contrast', mode:'dark',  accent:'#ffe600', accent2:'#00e5ff', bg:'#000000' },
+  { name:'Light Mode',    mode:'light', accent:'#6d28d9', accent2:'#0284c7', bg:'#f5f5f7' },
+  { name:'Red Alliance',  mode:'dark',  accent:'#ff4757', accent2:'#ffa502', bg:'#140a0c' },
+  { name:'Blue Alliance', mode:'dark',  accent:'#47c8ff', accent2:'#e8ff47', bg:'#080d14' },
+  { name:'Forest',        mode:'dark',  accent:'#2ed573', accent2:'#7bed9f', bg:'#0a120c' },
+  { name:'Royal',         mode:'dark',  accent:'#a55eea', accent2:'#fd79a8', bg:'#0e0a14' },
+];
+
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/\n/g,'<br>');
 }
@@ -49,6 +75,13 @@ function applyTheme(t) {
     r.setProperty('--bg3', t.bg3 || shadeHex(t.bg, 15));
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', t.bg);
   }
+}
+
+// Light/dark + density are root classes; CSS variable sets do the rest
+function applyDisplayMode(mode, density) {
+  const root = document.documentElement;
+  if (mode)    root.classList.toggle('light',   mode === 'light');
+  if (density) root.classList.toggle('compact', density === 'compact');
 }
 
 // ── Branding ──────────────────────────────────────────────────
@@ -94,6 +127,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   try { cfg = await API.getConfig(); } catch(e) {}
   window._appConfig = cfg;
   if (cfg.theme) applyTheme(cfg.theme);
+  applyDisplayMode(cfg.theme_mode, cfg.density);
   if (cfg.dashboard_name) applyBranding(cfg.dashboard_name, cfg.team_number);
   if (cfg.needs_setup) { showSetupWizard(cfg); return; }
   const auth = await API.checkAuth().catch(()=>({authenticated:false}));
@@ -130,6 +164,7 @@ async function bootApp() {
   TEAM_NUMBER = parseInt(appSettings.team_number) || null;
   applyBranding(appSettings.dashboard_name || window._appConfig?.dashboard_name, appSettings.team_number);
   if (appSettings.theme) applyTheme(appSettings.theme);
+  applyDisplayMode(appSettings.theme_mode, appSettings.density);
 
   const [cats, fields] = await Promise.all([
     API.getFlagCategories().catch(()=>null),
@@ -139,7 +174,7 @@ async function bootApp() {
   window._scoutingFields = Array.isArray(fields) && fields.length ? fields : DEFAULT_SCOUTING_FIELDS;
 
   refreshTopbar();
-  setupNav();
+  buildNav();
   setupSettings();
   navigateTo('dashboard');
 }
@@ -149,8 +184,23 @@ function refreshTopbar(){
 }
 
 // ── Navigation ────────────────────────────────────────────────
-function setupNav(){
-  document.querySelectorAll('.nav-btn').forEach(btn=>
+// The bottom nav is built from the configured page order/visibility
+// (Settings → Pages). Dashboard is always present.
+function navConfig(){
+  const nav = appSettings.nav;
+  return Array.isArray(nav) && nav.length ? nav : DEFAULT_NAV_CONFIG;
+}
+function buildNav(){
+  const el = document.getElementById('bottom-nav');
+  if (!el) return;
+  el.innerHTML = navConfig()
+    .filter(n => n.visible && NAV_PAGES[n.key])
+    .map(n => `
+      <button class="nav-btn ${n.key===currentPage?'active':''}" data-page="${n.key}">
+        <span class="nav-icon">${NAV_PAGES[n.key].icon}</span>
+        <span class="nav-label">${NAV_PAGES[n.key].label}</span>
+      </button>`).join('');
+  el.querySelectorAll('.nav-btn').forEach(btn=>
     btn.addEventListener('click',()=>navigateTo(btn.dataset.page))
   );
 }
@@ -158,7 +208,7 @@ function navigateTo(page){
   if (window._bsCleanup){ try{window._bsCleanup();}catch(e){} window._bsCleanup=null; }
   currentPage=page;
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.page===page));
-  ({dashboard,schedule,rankings,scouting,alliance,simulator,hub,bigscreen})[page]?.();
+  ({dashboard,schedule,rankings,scouting,alliance,simulator,hub,bigscreen,playoffs,awards})[page]?.();
 }
 
 // ── Settings sheet (tabbed) ───────────────────────────────────
@@ -181,6 +231,7 @@ function closeSettings(){
   document.getElementById('settings-modal').classList.add('hidden');
   // discard unsaved live previews
   applyTheme(appSettings.theme || DEFAULT_THEME);
+  applyDisplayMode(appSettings.theme_mode || 'dark', appSettings.density || 'normal');
   applyBranding(appSettings.dashboard_name, appSettings.team_number);
 }
 
@@ -188,9 +239,11 @@ function renderSettingsTab(tab){
   document.querySelectorAll('#settings-tabs .tab').forEach(t=>t.classList.toggle('active',t.dataset.stab===tab));
   const c = document.getElementById('settings-content');
   if (tab==='event')    renderSettingsEvent(c);
-  if (tab==='branding') renderSettingsBranding(c);
+  if (tab==='display')  renderSettingsDisplay(c);
   if (tab==='scouting') renderSettingsScoutFields(c);
   if (tab==='flags')    renderSettingsFlags(c);
+  if (tab==='pages')    renderSettingsPages(c);
+  if (tab==='data')     renderSettingsData(c);
   if (tab==='advanced') renderSettingsAdvanced(c);
 }
 
@@ -264,14 +317,29 @@ function renderSettingsEvent(c){
   });
 }
 
-// — Branding tab —
-function renderSettingsBranding(c){
+// — Display tab (branding + theme presets + light/dark + density) —
+function renderSettingsDisplay(c){
   const theme = appSettings.theme || DEFAULT_THEME;
+  let mode    = appSettings.theme_mode || 'dark';
+  let density = appSettings.density || 'normal';
+
   c.innerHTML=`
     <div class="setting-group">
       <label class="setting-label">Dashboard Name</label>
       <input class="setting-input" id="brand-name" value="${escHtml(appSettings.dashboard_name||'')}" placeholder="e.g. LL Dash" maxlength="48"/>
       <div class="setting-hint">Shown in the header, app title and home-screen icon. Any name works — "XX Dash" is just the convention.</div>
+    </div>
+    <div class="setting-group">
+      <label class="setting-label">Theme Presets</label>
+      <div class="preset-row">
+        ${THEME_PRESETS.map((p,i)=>`
+          <button class="preset-chip" data-preset="${i}" title="${escHtml(p.name)}"
+                  style="background:${p.bg};border-color:${p.accent}">
+            <span class="preset-dot" style="background:${p.accent}"></span>
+            <span class="preset-dot" style="background:${p.accent2}"></span>
+            <span class="preset-name" style="color:${p.mode==='light'?'#222':'#eee'}">${escHtml(p.name)}</span>
+          </button>`).join('')}
+      </div>
     </div>
     <div class="setting-group">
       <label class="setting-label">Colors</label>
@@ -280,9 +348,23 @@ function renderSettingsBranding(c){
       <div class="color-row"><input type="color" id="brand-bg"      value="${theme.bg||DEFAULT_THEME.bg}"/><span>Background</span></div>
       <div class="setting-hint">Changes preview live — hit Save to keep them.</div>
     </div>
+    <div class="setting-group">
+      <label class="setting-label">Mode &amp; Density</label>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <div class="seg-toggle" id="disp-mode">
+          <button data-v="dark"  class="${mode==='dark'?'on':''}">🌙 Dark</button>
+          <button data-v="light" class="${mode==='light'?'on':''}">☀️ Light</button>
+        </div>
+        <div class="seg-toggle" id="disp-density">
+          <button data-v="normal"  class="${density==='normal'?'on':''}">Normal</button>
+          <button data-v="compact" class="${density==='compact'?'on':''}">Compact</button>
+        </div>
+      </div>
+      <div class="setting-hint">Compact shrinks fonts and padding — more data per screen on tablets.</div>
+    </div>
     <div style="display:flex;gap:.5rem">
-      <button class="btn btn-primary" style="flex:1" id="brand-save">Save Branding</button>
-      <button class="btn btn-secondary" id="brand-reset">Reset Colors</button>
+      <button class="btn btn-primary" style="flex:1" id="brand-save">Save Display</button>
+      <button class="btn btn-secondary" id="brand-reset">Reset</button>
     </div>`;
 
   const livePreview=()=>{
@@ -291,15 +373,47 @@ function renderSettingsBranding(c){
       accent2:document.getElementById('brand-accent2').value,
       bg:     document.getElementById('brand-bg').value,
     });
+    applyDisplayMode(mode, density);
     applyBranding(document.getElementById('brand-name').value.trim()||appSettings.dashboard_name, appSettings.team_number);
   };
   ['brand-accent','brand-accent2','brand-bg'].forEach(id=>document.getElementById(id).addEventListener('input',livePreview));
   document.getElementById('brand-name').addEventListener('input',livePreview);
 
+  c.querySelectorAll('.preset-chip').forEach(chip=>{
+    chip.addEventListener('click',()=>{
+      const p = THEME_PRESETS[+chip.dataset.preset];
+      document.getElementById('brand-accent').value =p.accent;
+      document.getElementById('brand-accent2').value=p.accent2;
+      document.getElementById('brand-bg').value     =p.bg;
+      mode = p.mode;
+      c.querySelectorAll('#disp-mode button').forEach(b=>b.classList.toggle('on',b.dataset.v===mode));
+      livePreview();
+    });
+  });
+
+  c.querySelectorAll('#disp-mode button').forEach(b=>b.addEventListener('click',()=>{
+    mode=b.dataset.v;
+    c.querySelectorAll('#disp-mode button').forEach(x=>x.classList.toggle('on',x===b));
+    // switching mode with a mismatched background looks broken — flip it
+    const bgEl=document.getElementById('brand-bg');
+    const lum=(h=>{const n=parseInt(h.slice(1),16);return .299*((n>>16)&255)+.587*((n>>8)&255)+.114*(n&255);})(bgEl.value);
+    if (mode==='light' && lum<128) bgEl.value='#f5f5f7';
+    if (mode==='dark'  && lum>=128) bgEl.value=DEFAULT_THEME.bg;
+    livePreview();
+  }));
+  c.querySelectorAll('#disp-density button').forEach(b=>b.addEventListener('click',()=>{
+    density=b.dataset.v;
+    c.querySelectorAll('#disp-density button').forEach(x=>x.classList.toggle('on',x===b));
+    livePreview();
+  }));
+
   document.getElementById('brand-reset').addEventListener('click',()=>{
     document.getElementById('brand-accent').value =DEFAULT_THEME.accent;
     document.getElementById('brand-accent2').value=DEFAULT_THEME.accent2;
     document.getElementById('brand-bg').value     =DEFAULT_THEME.bg;
+    mode='dark'; density='normal';
+    c.querySelectorAll('#disp-mode button').forEach(b=>b.classList.toggle('on',b.dataset.v==='dark'));
+    c.querySelectorAll('#disp-density button').forEach(b=>b.classList.toggle('on',b.dataset.v==='normal'));
     livePreview();
   });
 
@@ -309,15 +423,132 @@ function renderSettingsBranding(c){
       theme_accent: document.getElementById('brand-accent').value,
       theme_accent2:document.getElementById('brand-accent2').value,
       theme_bg:     document.getElementById('brand-bg').value,
+      theme_mode:   mode,
+      density:      density,
     };
     if (name) payload.dashboard_name=name;
     try{ await API.saveSettings(payload); }catch(e){ showToast('Save failed'); return; }
     if (name) appSettings.dashboard_name=name;
     appSettings.theme={accent:payload.theme_accent,accent2:payload.theme_accent2,bg:payload.theme_bg};
+    appSettings.theme_mode=mode; appSettings.density=density;
     applyTheme(appSettings.theme);
+    applyDisplayMode(mode, density);
     applyBranding(appSettings.dashboard_name, appSettings.team_number);
-    showToast('Branding saved ✓');
+    showToast('Display saved ✓');
   });
+}
+
+// — Pages tab (nav order/visibility + Big Screen panels/intervals) —
+function renderSettingsPages(c){
+  let nav = JSON.parse(JSON.stringify(navConfig()));
+  const bs = JSON.parse(JSON.stringify(appSettings.bigscreen || {panels:{schedule:true,rankings:true,playoffs:true},cycle_seconds:15,refresh_seconds:45}));
+  let highlightOurs = appSettings.awards_highlight_ours !== false;
+
+  function draw(){
+    c.innerHTML=`
+      <div class="setting-group">
+        <label class="setting-label">Navigation Tabs</label>
+        <div class="setting-hint" style="margin:0 0 .5rem">Reorder with ↑↓, untick to hide a tab. Dashboard is always shown.</div>
+        <div id="nav-list">${nav.map((n,i)=>{
+          const meta=NAV_PAGES[n.key]||{icon:'•',label:n.key};
+          const locked=n.key==='dashboard';
+          return `
+          <div class="cfg-row" style="padding:.4rem .55rem">
+            <div class="cfg-row-main" style="align-items:center">
+              <label class="sf-req-label" style="margin-right:0">
+                <input type="checkbox" class="nav-vis" data-i="${i}" ${n.visible?'checked':''} ${locked?'disabled':''}/>
+              </label>
+              <span style="font-size:.95rem;width:1.4rem;text-align:center">${meta.icon}</span>
+              <span style="flex:1;font-size:.85rem;font-weight:600">${escHtml(meta.label)}${locked?' <span style="color:var(--text3);font-size:.65rem">(always on)</span>':''}</span>
+              <button class="icon-btn cfg-mini" data-up="${i}" ${i===0?'disabled':''}>↑</button>
+              <button class="icon-btn cfg-mini" data-down="${i}" ${i===nav.length-1?'disabled':''}>↓</button>
+            </div>
+          </div>`;}).join('')}
+        </div>
+      </div>
+      <div class="setting-group">
+        <label class="setting-label">Big Screen</label>
+        <div class="setting-hint" style="margin:0 0 .5rem">Panels shown on the pit display (and rotated through in cycle mode).</div>
+        ${['schedule','rankings','playoffs'].map(k=>`
+          <label class="sf-req-label" style="margin:0 0 .4rem;font-size:.8rem">
+            <input type="checkbox" class="bs-panel" data-k="${k}" ${bs.panels?.[k]?'checked':''}/>
+            ${k.charAt(0).toUpperCase()+k.slice(1)} panel
+          </label>`).join('')}
+        <div class="form-row" style="margin-top:.6rem">
+          <div>
+            <label class="setting-label" style="font-size:.6rem">Cycle interval (s)</label>
+            <input class="setting-input" id="bs-cycle" type="number" min="5" max="300" value="${bs.cycle_seconds||15}"/>
+          </div>
+          <div>
+            <label class="setting-label" style="font-size:.6rem">Refresh interval (s)</label>
+            <input class="setting-input" id="bs-refresh" type="number" min="10" max="600" value="${bs.refresh_seconds||45}"/>
+          </div>
+        </div>
+      </div>
+      <div class="setting-group">
+        <label class="setting-label">Awards</label>
+        <label class="sf-req-label" style="margin:0;font-size:.8rem">
+          <input type="checkbox" id="awards-ours" ${highlightOurs?'checked':''}/>
+          Highlight our team's awards
+        </label>
+      </div>
+      <button class="btn btn-primary btn-block" id="pages-save">Save Pages</button>`;
+
+    c.querySelectorAll('[data-up]').forEach(b=>b.addEventListener('click',()=>{sync();const i=+b.dataset.up;[nav[i-1],nav[i]]=[nav[i],nav[i-1]];draw();}));
+    c.querySelectorAll('[data-down]').forEach(b=>b.addEventListener('click',()=>{sync();const i=+b.dataset.down;[nav[i],nav[i+1]]=[nav[i+1],nav[i]];draw();}));
+
+    function sync(){
+      c.querySelectorAll('.nav-vis').forEach(el=>{nav[+el.dataset.i].visible=el.checked;});
+      c.querySelectorAll('.bs-panel').forEach(el=>{bs.panels=bs.panels||{};bs.panels[el.dataset.k]=el.checked;});
+      bs.cycle_seconds  =parseInt(document.getElementById('bs-cycle').value)||15;
+      bs.refresh_seconds=parseInt(document.getElementById('bs-refresh').value)||45;
+      highlightOurs=document.getElementById('awards-ours').checked;
+    }
+
+    document.getElementById('pages-save').addEventListener('click',async()=>{
+      sync();
+      if (!Object.values(bs.panels||{}).some(Boolean)){showToast('Enable at least one Big Screen panel');return;}
+      try{
+        await API.saveSettings({nav_config:nav, bigscreen_config:bs, awards_highlight_ours:highlightOurs});
+      }catch(e){showToast('Save failed');return;}
+      appSettings.nav=nav; appSettings.bigscreen=bs; appSettings.awards_highlight_ours=highlightOurs;
+      buildNav();
+      // if the page we're on just got hidden, fall back to the dashboard
+      const visible = nav.filter(n=>n.visible).map(n=>n.key);
+      if (!visible.includes(currentPage)) { closeSettings(); navigateTo('dashboard'); }
+      showToast('Pages saved ✓');
+    });
+  }
+  draw();
+}
+
+// — Data tab (exports) —
+function renderSettingsData(c){
+  const dl = (path) => { window.open(path, '_blank'); };
+  c.innerHTML=`
+    <div class="setting-hint" style="margin-bottom:.75rem">Download your team's data. Scouting CSV columns follow the current scouting field schema.</div>
+    <div class="setting-group">
+      <label class="setting-label">Scouting Notes</label>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" data-dl="/api/export/scouting?format=csv">⬇ CSV (this event)</button>
+        <button class="btn btn-secondary btn-sm" data-dl="/api/export/scouting?format=json">⬇ JSON (this event)</button>
+        <button class="btn btn-secondary btn-sm" data-dl="/api/export/scouting?format=csv&all=1">⬇ CSV (everything)</button>
+      </div>
+    </div>
+    <div class="setting-group">
+      <label class="setting-label">Alliance Flags</label>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" data-dl="/api/export/flags?format=csv">⬇ CSV (this event)</button>
+        <button class="btn btn-secondary btn-sm" data-dl="/api/export/flags?format=json">⬇ JSON (this event)</button>
+      </div>
+    </div>
+    <div class="setting-group">
+      <label class="setting-label">Hub Notes &amp; Checklists</label>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" data-dl="/api/export/hub">⬇ JSON</button>
+      </div>
+    </div>`;
+  c.querySelectorAll('[data-dl]').forEach(b=>b.addEventListener('click',()=>dl(b.dataset.dl)));
 }
 
 // — Scouting fields tab —

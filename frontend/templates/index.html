@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="{{ 'light' if brand.theme_mode == 'light' else '' }} {{ 'compact' if brand.density == 'compact' else '' }}">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
@@ -65,16 +65,8 @@
 
   <footer class="attribution app-attribution">Event data provided by <a href="https://frc-events.firstinspires.org/services/API" target="_blank" rel="noopener">FIRST<sup>®</sup> Events API</a></footer>
 
-  <nav class="bottom-nav">
-    <button class="nav-btn active" data-page="dashboard"><span class="nav-icon">◈</span><span class="nav-label">Dash</span></button>
-    <button class="nav-btn" data-page="schedule"><span class="nav-icon">◷</span><span class="nav-label">Schedule</span></button>
-    <button class="nav-btn" data-page="rankings"><span class="nav-icon">◬</span><span class="nav-label">Rankings</span></button>
-    <button class="nav-btn" data-page="scouting"><span class="nav-icon">◉</span><span class="nav-label">Scout</span></button>
-    <button class="nav-btn" data-page="alliance"><span class="nav-icon">⬡</span><span class="nav-label">Alliance</span></button>
-    <button class="nav-btn" data-page="simulator"><span class="nav-icon">▲</span><span class="nav-label">Sim</span></button>
-    <button class="nav-btn" data-page="hub"><span class="nav-icon">⊞</span><span class="nav-label">Hub</span></button>
-    <button class="nav-btn" data-page="bigscreen"><span class="nav-icon">⛶</span><span class="nav-label">Display</span></button>
-  </nav>
+  <!-- Built by buildNav() from the configured page order/visibility -->
+  <nav class="bottom-nav" id="bottom-nav"></nav>
 </div>
 
 <!-- Settings Sheet -->
@@ -88,9 +80,11 @@
     <div class="modal-body">
       <div class="tabs settings-tabs" id="settings-tabs">
         <button class="tab active" data-stab="event">Event</button>
-        <button class="tab" data-stab="branding">Branding</button>
+        <button class="tab" data-stab="display">Display</button>
         <button class="tab" data-stab="scouting">Scout Fields</button>
         <button class="tab" data-stab="flags">Flags</button>
+        <button class="tab" data-stab="pages">Pages</button>
+        <button class="tab" data-stab="data">Data</button>
         <button class="tab" data-stab="advanced">Team &amp; API</button>
       </div>
       <div id="settings-content"></div>
@@ -111,6 +105,8 @@
 <script src="/static/js/pages/simulator.js"></script>
 <script src="/static/js/pages/hub.js"></script>
 <script src="/static/js/pages/bigscreen.js"></script>
+<script src="/static/js/pages/playoffs.js"></script>
+<script src="/static/js/pages/awards.js"></script>
 <script src="/static/js/app.js"></script>
 </body>
 </html>
