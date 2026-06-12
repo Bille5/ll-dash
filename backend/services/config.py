@@ -1,0 +1,220 @@
+"""Deployment configuration resolved from AppSettings (DB) with env-var fallback.
+
+All deployment-specific values (team number, PIN, FTC API credentials,
+branding, theming, scouting field schema, flag categories) live in the
+app_settings table so a deployment can be configured entirely through the
+setup wizard / in-app settings without env vars or redeploys. Env vars are
+kept as a fallback for existing deployments and local development.
+"""
+import json
+import os
+import re
+
+from backend.models.models import AppSettings
+
+# ── Defaults (the original LL Dash deployment values are defaults, not requirements) ──
+DEFAULT_DASHBOARD_NAME = 'LL Dash'
+
+DEFAULT_THEME = {
+    'accent':  '#e8ff47',
+    'accent2': '#47c8ff',
+    'bg':      '#0a0a0f',
+}
+
+DEFAULT_SCOUTING_FIELDS = [
+    {'key': 'driver_rating', 'label': 'Driver Rating',         'type': 'stars',    'required': False},
+    {'key': 'auto',          'label': 'Auto Notes',            'type': 'textarea', 'required': False,
+     'placeholder': 'What did they do in autonomous? Consistency, scoring, starting position…'},
+    {'key': 'teleop',        'label': 'Teleop Notes',          'type': 'textarea', 'required': False,
+     'placeholder': 'Teleop observations — cycle speed, scoring zones, defense, driver skill…'},
+    {'key': 'park',          'label': 'Park / Endgame Notes',  'type': 'textarea', 'required': False,
+     'placeholder': 'Endgame behavior — park, climb, consistency…'},
+    {'key': 'other',         'label': 'Other Notes',           'type': 'textarea', 'required': False,
+     'placeholder': 'Strengths, weaknesses, alliance strategy tips, notable moments…'},
+    {'key': 'auto_score',    'label': 'Auto Score',            'type': 'number',   'required': False},
+    {'key': 'teleop_score',  'label': 'TeleOp Score',          'type': 'number',   'required': False},
+    {'key': 'endgame_score', 'label': 'Endgame Score',         'type': 'number',   'required': False},
+    {'key': 'penalties',     'label': 'Penalties',             'type': 'number',   'required': False},
+]
+
+DEFAULT_FLAG_CATEGORIES = [
+    {'key': 'target', 'label': 'Target',      'color': '#2ed573', 'icon': '🎯'},
+    {'key': 'dnp',    'label': 'Do Not Pick', 'color': '#ff4757', 'icon': '🚫'},
+]
+
+SCOUTING_FIELD_TYPES = {'text', 'textarea', 'number', 'select', 'stars'}
+
+# Field keys whose values are stored in dedicated ScoutingNote columns rather
+# than the notes JSON blob (kept for backwards compatibility with old data).
+LEGACY_SCOUT_KEYS = {'driver_rating', 'auto_score', 'teleop_score', 'endgame_score', 'penalties'}
+
+
+def get(key, env_key=None, default=None):
+    try:
+        v = AppSettings.get(key)
+    except Exception:
+        v = None
+    if v not in (None, ''):
+        return v
+    if env_key:
+        v = os.getenv(env_key)
+        if v not in (None, ''):
+            return v
+    return default
+
+
+def get_json(key, default):
+    raw = get(key)
+    if not raw:
+        return default
+    try:
+        v = json.loads(raw)
+        return v if v else default
+    except (ValueError, TypeError):
+        return default
+
+
+def needs_setup():
+    return get('setup_complete') != '1'
+
+
+def team_number():
+    return get('team_number', 'TEAM_NUMBER')
+
+
+def team_pin():
+    return get('team_pin', 'TEAM_PIN', '3650')
+
+
+def ftc_credentials():
+    return (get('ftc_api_username', 'FTC_API_USERNAME', ''),
+            get('ftc_api_key', 'FTC_API_KEY', ''))
+
+
+def dashboard_name():
+    return get('dashboard_name', default=DEFAULT_DASHBOARD_NAME)
+
+
+def _shade(hex_color, amt):
+    """Lighten (dark themes) / darken (light themes) a hex color slightly,
+    used to derive the card/raised surface colors from the base background."""
+    h = str(hex_color).lstrip('#')
+    if len(h) == 3:
+        h = ''.join(c * 2 for c in h)
+    try:
+        r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    except (ValueError, IndexError):
+        return hex_color
+    lum = 0.299 * r + 0.587 * g + 0.114 * b
+    if lum > 128:
+        amt = -amt
+    clamp = lambda v: max(0, min(255, v + amt))
+    return '#%02x%02x%02x' % (clamp(r), clamp(g), clamp(b))
+
+
+def theme():
+    t = {
+        'accent':  get('theme_accent',  default=DEFAULT_THEME['accent']),
+        'accent2': get('theme_accent2', default=DEFAULT_THEME['accent2']),
+        'bg':      get('theme_bg',      default=DEFAULT_THEME['bg']),
+    }
+    t['bg2'] = _shade(t['bg'], 8)
+    t['bg3'] = _shade(t['bg'], 15)
+    return t
+
+
+def branding():
+    """Branding info for templates / the manifest. Never raises — falls back
+    to defaults if the database isn't reachable yet (e.g. first boot)."""
+    try:
+        name = dashboard_name()
+        thm = theme()
+        team = team_number()
+    except Exception:
+        name, thm, team = DEFAULT_DASHBOARD_NAME, dict(DEFAULT_THEME), None
+        thm['bg2'] = _shade(thm['bg'], 8)
+        thm['bg3'] = _shade(thm['bg'], 15)
+    parts = str(name).strip().split(None, 1)
+    return {
+        'name': name,
+        'name_first': parts[0] if parts else name,
+        'name_rest': parts[1] if len(parts) > 1 else '',
+        'theme': thm,
+        'team_number': team,
+    }
+
+
+def scouting_fields():
+    return get_json('scouting_fields', DEFAULT_SCOUTING_FIELDS)
+
+
+def flag_categories():
+    return get_json('flag_categories', DEFAULT_FLAG_CATEGORIES)
+
+
+def slugify(label):
+    s = re.sub(r'[^a-z0-9]+', '_', str(label).lower()).strip('_')
+    return s[:32] or 'field'
+
+
+def validate_scouting_fields(fields):
+    """Returns (cleaned_fields, error). Cleaned fields have stable keys."""
+    if not isinstance(fields, list) or not fields:
+        return None, 'Field list must be a non-empty array'
+    if len(fields) > 40:
+        return None, 'Too many fields (max 40)'
+    cleaned, seen = [], set()
+    for f in fields:
+        if not isinstance(f, dict):
+            return None, 'Each field must be an object'
+        label = str(f.get('label', '')).strip()[:64]
+        ftype = f.get('type', 'text')
+        if not label:
+            return None, 'Every field needs a label'
+        if ftype not in SCOUTING_FIELD_TYPES:
+            return None, f'Invalid field type: {ftype}'
+        key = slugify(f.get('key') or label)
+        base, i = key, 2
+        while key in seen:
+            key, i = f'{base}_{i}', i + 1
+        seen.add(key)
+        entry = {'key': key, 'label': label, 'type': ftype, 'required': bool(f.get('required'))}
+        if f.get('placeholder'):
+            entry['placeholder'] = str(f['placeholder'])[:256]
+        if ftype == 'select':
+            opts = [str(o).strip()[:64] for o in (f.get('options') or []) if str(o).strip()]
+            if not opts:
+                return None, f'Select field "{label}" needs at least one option'
+            entry['options'] = opts[:20]
+        cleaned.append(entry)
+    return cleaned, None
+
+
+def validate_flag_categories(cats):
+    """Returns (cleaned_categories, error)."""
+    if not isinstance(cats, list):
+        return None, 'Categories must be an array'
+    if len(cats) > 12:
+        return None, 'Too many categories (max 12)'
+    cleaned, seen = [], set()
+    for c in cats:
+        if not isinstance(c, dict):
+            return None, 'Each category must be an object'
+        label = str(c.get('label', '')).strip()[:32]
+        if not label:
+            return None, 'Every category needs a name'
+        color = str(c.get('color', '')).strip()
+        if not re.fullmatch(r'#[0-9a-fA-F]{6}', color):
+            return None, f'Category "{label}" needs a hex color like #2ed573'
+        key = slugify(c.get('key') or label)
+        if key == 'neutral':
+            return None, '"neutral" is reserved for unflagged teams'
+        base, i = key, 2
+        while key in seen:
+            key, i = f'{base}_{i}', i + 1
+        seen.add(key)
+        entry = {'key': key, 'label': label, 'color': color}
+        if c.get('icon'):
+            entry['icon'] = str(c['icon'])[:8]
+        cleaned.append(entry)
+    return cleaned, None

@@ -7,6 +7,7 @@ async function rankings() {
     API.getRankings().catch(()=>null),
     API.ftcscoutEventOprs(appSettings.active_event_code, season).catch(()=>null),
   ]);
+  if (currentPage !== 'rankings') return;  // stale fetch — user navigated away
 
   const ranks = rankData?.rankings || rankData?.Rankings || [];
   if (!ranks.length) { renderPage('<div class="empty-state"><div class="empty-icon">◬</div><div>No rankings yet.</div></div>'); return; }
@@ -361,10 +362,8 @@ async function openTeamModal(teamNum) {
     ${ftcHtml}
 
     <div class="form-label" style="margin-bottom:.4rem">Alliance Flag</div>
-    <div class="flag-row" style="margin-bottom:1rem" id="tp-flags">
-      <button class="flag-btn target ${flag==='target'?'active':''}" data-flag="target">🎯 Target</button>
-      <button class="flag-btn neutral ${flag==='neutral'?'active':''}" data-flag="neutral">— Neutral</button>
-      <button class="flag-btn dnp ${flag==='dnp'?'active':''}" data-flag="dnp">🚫 DnP</button>
+    <div class="flag-row" style="margin-bottom:1rem;flex-wrap:wrap" id="tp-flags">
+      ${[NEUTRAL_FLAG, ...flagCats()].map(c=>flagBtnHtml(c, flag===c.key)).join('')}
     </div>
 
     ${played.length?`<div class="form-label" style="margin-bottom:.25rem">Match Results at This Event</div>${matchRows}<div style="height:.5rem"></div>`:''}
@@ -388,8 +387,14 @@ async function openTeamModal(teamNum) {
   document.querySelectorAll('#tp-flags .flag-btn').forEach(btn=>{
     btn.addEventListener('click',async()=>{
       await API.setFlag(teamNum,btn.dataset.flag).catch(()=>{});
-      document.querySelectorAll('#tp-flags .flag-btn').forEach(b=>b.classList.remove('active'));
-      btn.classList.add('active');
+      document.querySelectorAll('#tp-flags .flag-btn').forEach(b=>{
+        const cat=b.dataset.flag==='neutral'?NEUTRAL_FLAG:flagCat(b.dataset.flag);
+        const active=b===btn;
+        b.classList.toggle('active',active);
+        b.style.background=active?hexA(cat?.color||'#888',.15):'';
+        b.style.color=active?(cat?.color||''):'';
+        b.style.borderColor=active?(cat?.color||''):'';
+      });
       showToast('Flag updated');
     });
   });

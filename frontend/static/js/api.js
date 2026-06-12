@@ -14,13 +14,23 @@ const API = {
   logout:    ()  => fetch('/auth/logout', {method:'POST'}),
   checkAuth: ()  => fetch('/auth/check').then(r=>r.json()),
 
+  getConfig:     ()  => API.get('/config'),
+  setupValidate: d   => API.post('/setup/validate', d),
+  completeSetup: d   => API.post('/setup', d),
+
   getSettings:  ()  => API.get('/settings'),
   saveSettings: d   => API.post('/settings', d),
+
+  getScoutingFields:  ()  => API.get('/scouting-fields'),
+  saveScoutingFields: f   => API.post('/scouting-fields', f),
+  getFlagCategories:  ()  => API.get('/flag-categories'),
+  saveFlagCategories: c   => API.post('/flag-categories', c),
 
   getSeasons:   ()      => API.get('/seasons'),
   getEvents:    season  => API.get(`/events?season=${season}`),
   getRankings:  ()      => API.get('/rankings'),
   getSchedule:  (l='qual') => API.get(`/schedule?level=${l}`),
+  getScheduleFields: (l='qual') => API.get(`/schedule-fields?level=${l}`),
   getMatches:   (l='qual') => API.get(`/matches?level=${l}`),
   getOprs:      ()      => API.get('/oprs'),
   getTeams:     ()      => API.get('/teams'),

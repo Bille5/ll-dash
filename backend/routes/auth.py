@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, session
 from functools import wraps
-import os
+
+from backend.services import config
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -17,7 +18,7 @@ def require_auth(f):
 @auth_bp.route('/login', methods=['POST'])
 def login():
     data = request.get_json() or {}
-    if str(data.get('pin', '')) == str(os.getenv('TEAM_PIN', '3650')):
+    if str(data.get('pin', '')) == str(config.team_pin()):
         session['authenticated'] = True
         session.permanent = True
         return jsonify({'success': True})

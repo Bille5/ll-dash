@@ -9,6 +9,7 @@ async function schedule() {
     API.ftcscoutEventOprs(appSettings.active_event_code, season).catch(()=>null),
     API.ftcscoutEventMatchRP(appSettings.active_event_code, season).catch(()=>null),
   ]);
+  if (currentPage !== 'schedule') return;  // stale fetch — user navigated away
 
   const matches  = schedData?.schedule || [];
   const rankings = rankData?.rankings || rankData?.Rankings || [];

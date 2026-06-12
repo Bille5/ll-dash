@@ -8,6 +8,7 @@ async function dashboard() {
     API.getSchedule('qual').catch(()=>null),
     API.ftcscoutEventMatchRP(appSettings.active_event_code, season).catch(()=>null),
   ]);
+  if (currentPage !== 'dashboard') return;  // stale fetch — user navigated away
 
   // Per-match RP map from FTCScout GraphQL
   const dashScoresMap = {};
@@ -142,7 +143,7 @@ async function dashboard() {
   const statsHtml = ourRank ? `
     <div class="card">
       <div class="card-header">
-        <span class="card-title">Team ${TEAM_NUMBER} · ${ourRank.teamName||'Limited Liability'}</span>
+        <span class="card-title">Team ${TEAM_NUMBER} · ${ourRank.teamName||''}</span>
         <span style="font-size:.8rem;font-family:var(--mono);color:var(--accent);font-weight:700">#${ourRank.rank} of ${rankings.length}</span>
       </div>
       <div class="stat-grid stat-grid-3">
@@ -232,7 +233,7 @@ async function dashboard() {
 
   renderPage(`
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.25rem">
-      <div class="page-title" style="margin-bottom:0">LL<span>DASH</span></div>
+      <div class="page-title" style="margin-bottom:0">${brandHtml(appSettings.dashboard_name)}</div>
       <button class="icon-btn" onclick="dashboard()" title="Reload">↻</button>
     </div>
     <div style="font-size:.73rem;font-family:var(--mono);color:var(--text2);margin-bottom:.75rem">${appSettings.active_event_name||'No Event'}</div>

@@ -14,6 +14,7 @@ async function simulator() {
     API.ftcscoutEventOprs(appSettings.active_event_code, season).catch(()=>null),
     API.ftcscoutEventMatchRP(appSettings.active_event_code, season).catch(()=>null),
   ]);
+  if (currentPage !== 'simulator') return;  // stale fetch — user navigated away
 
   const rankings = rankData?.rankings || rankData?.Rankings || [];
   const schedule = schedData?.schedule || [];

@@ -38,11 +38,51 @@ from datetime import datetime
 FTC_BASE = "https://ftc-api.firstinspires.org/v2.0"
 
 
-def _headers():
-    u = os.getenv('FTC_API_USERNAME', '')
-    k = os.getenv('FTC_API_KEY', '')
-    tok = base64.b64encode(f"{u}:{k}".encode()).decode()
+def _credentials():
+    """FTC API credentials from AppSettings, falling back to env vars."""
+    u = k = None
+    try:
+        from backend.models.models import AppSettings
+        u = AppSettings.get('ftc_api_username')
+        k = AppSettings.get('ftc_api_key')
+    except Exception:
+        pass  # no app context / table yet — fall back to env
+    return (u or os.getenv('FTC_API_USERNAME', ''), k or os.getenv('FTC_API_KEY', ''))
+
+
+def _basic_headers(username, key):
+    tok = base64.b64encode(f"{username}:{key}".encode()).decode()
     return {'Authorization': f'Basic {tok}', 'Accept': 'application/json'}
+
+
+def _headers():
+    u, k = _credentials()
+    return _basic_headers(u, k)
+
+
+def validate_credentials(username, key):
+    """Live-check a username/key pair against the FTC Events API.
+
+    The API root (/v2.0/) is public, so credentials are verified against an
+    authenticated endpoint; the root is only used to learn the seasons.
+    """
+    if not username or not key:
+        return {'valid': False, 'error': 'Username and key are required'}
+    try:
+        root = requests.get(f"{FTC_BASE}/", timeout=10)
+        season = root.json().get('currentSeason') if root.status_code == 200 else None
+        max_season = root.json().get('maxSeason') if root.status_code == 200 else None
+        check_season = season or datetime.now().year
+        r = requests.get(f"{FTC_BASE}/{check_season}/events",
+                         headers=_basic_headers(username, key),
+                         params={'eventCode': 'FTCCMP1'}, timeout=10)
+        if r.status_code in (200, 404):  # 404 = authed fine, event just doesn't exist
+            return {'valid': True, 'currentSeason': season, 'maxSeason': max_season}
+        if r.status_code in (401, 403):
+            return {'valid': False, 'error': 'Invalid username or API key'}
+        return {'valid': False, 'error': f'FTC API returned status {r.status_code}'}
+    except Exception as e:
+        return {'valid': False, 'error': f'Could not reach FTC API: {e}'}
 
 
 def _get(url, params=None):
