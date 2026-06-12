@@ -240,6 +240,54 @@ function _rosterOurs(rosters, num) {
   return (rosters[num] || []).some(t => t == TEAM_NUMBER);
 }
 
+// Build the global OPR map from an FTCScout oprList response
+function setOprMapFrom(oprResult) {
+  if (!oprResult || !Array.isArray(oprResult.oprList)) return;
+  const map = {};
+  oprResult.oprList.forEach(t => {
+    if (t.teamNumber) map[t.teamNumber] = {total: t.opr||0, auto: t.autoOpr||0, teleop: t.dcOpr||0, endgame: t.egOpr||0};
+  });
+  if (Object.keys(map).length) window._oprMap = map;
+}
+
+// OPR prediction for a bracket slot/pairing. Uses the actual match lineups
+// when scheduled, otherwise each alliance's two strongest roster teams
+// (2 robots play per match).
+function _topTwoByOpr(teams, oprMap) {
+  return [...(teams || [])].sort((a, b) => (oprMap[b]?.total || 0) - (oprMap[a]?.total || 0)).slice(0, 2);
+}
+function _bkPred(redA, blueA, matchRec, rosters) {
+  const oprMap = window._oprMap;
+  if (!oprMap || !Object.keys(oprMap).length || redA == null || blueA == null) return null;
+  let redTeams, blueTeams;
+  if (matchRec?.m) {
+    redTeams  = _sideTeams(matchRec.m, 'Red');
+    blueTeams = _sideTeams(matchRec.m, 'Blue');
+    if (matchRec.redA !== redA) [redTeams, blueTeams] = [blueTeams, redTeams];
+  } else {
+    redTeams  = _topTwoByOpr(rosters[redA], oprMap);
+    blueTeams = _topTwoByOpr(rosters[blueA], oprMap);
+  }
+  const pred = oprPredictSides(redTeams, blueTeams, oprMap);
+  return pred.hasData ? pred : null;
+}
+function _bkFavLine(pred, redA, blueA, rosters) {
+  if (!pred) return '';
+  const oursRed = _rosterOurs(rosters, redA), oursBlue = _rosterOurs(rosters, blueA);
+  let verdict;
+  if (pred.winner === 'Tie') {
+    verdict = `<span style="color:var(--yellow)">Toss-up</span>`;
+  } else if (oursRed || oursBlue) {
+    const fav = (pred.winner === 'Red') === oursRed;
+    verdict = `<span style="color:${fav ? 'var(--green)' : 'var(--red)'}">${fav ? 'Favored' : 'Unfavored'}</span> ${pred.confidence}%`;
+  } else {
+    const favA = pred.winner === 'Red' ? redA : blueA;
+    verdict = `<span style="color:${pred.winner === 'Red' ? '#ff8a94' : 'var(--accent2)'}">A${favA} favored</span> ${pred.confidence}%`;
+  }
+  return `<div class="bk-pred">${verdict} · OPR <span style="color:#ff8a94">${pred.redOPR.toFixed(0)}</span> v <span style="color:var(--accent2)">${pred.blueOPR.toFixed(0)}</span></div>
+    ${appSettings.advanced_predictions !== false ? oprBreakdownHtml(pred) : ''}`;
+}
+
 function _bkSide(color, allianceNum, label, score, isWinner, decided, rosters) {
   const known = allianceNum != null;
   const ours = known && _rosterOurs(rosters, allianceNum);
@@ -266,6 +314,7 @@ function _bkMatchCard(slot, rosters) {
   }
   const time = m && !played ? formatTime(m.startTime) : '';
   const replay = slot.games.length > 1 ? ` <span class="bk-replay">tie → replayed</span>` : '';
+  const fav = !decided ? _bkFavLine(_bkPred(slot.redA, slot.blueA, slot.match, rosters), slot.redA, slot.blueA, rosters) : '';
   return `
     <div class="bk-match ${decided ? 'bk-decided' : ''}">
       <div class="bk-match-head">
@@ -275,6 +324,7 @@ function _bkMatchCard(slot, rosters) {
       </div>
       ${_bkSide('red',  slot.redA,  slot.redLabel,  redScore,  decided && slot.winnerA === slot.redA,  decided, rosters)}
       ${_bkSide('blue', slot.blueA, slot.blueLabel, blueScore, decided && slot.winnerA === slot.blueA, decided, rosters)}
+      ${fav}
     </div>`;
 }
 
@@ -298,12 +348,16 @@ function _bkFinalsCard(finals, rosters) {
   const champ = finals.championA != null ? `
     <div class="bk-champion">🏆 Alliance ${finals.championA} — ${_rosterTeams(rosters, finals.championA)}</div>` : '';
   const subtitle = finals.bestOf3 ? 'best of 3 — first alliance to 2 wins' : 'lower-bracket alliance must win twice';
+  const fav = finals.championA == null
+    ? _bkFavLine(_bkPred(finals.redA, finals.blueA, finals.games[finals.games.length - 1], rosters), finals.redA, finals.blueA, rosters)
+    : '';
   return `
     <div class="bk-match bk-finals">
       <div class="bk-match-head"><span>FINALS</span><span class="bk-dest">${subtitle}</span></div>
       ${_bkSide('red',  finals.redA,  finals.redLabel,  null, finals.championA != null && finals.championA === finals.redA,  finals.championA != null, rosters)}
       ${_bkSide('blue', finals.blueA, finals.blueLabel, null, finals.championA != null && finals.championA === finals.blueA, finals.championA != null, rosters)}
       ${gameRows ? `<div class="bk-final-games">${gameRows}</div>` : ''}
+      ${fav}
       ${champ}
     </div>`;
 }
@@ -359,12 +413,15 @@ async function playoffs() {
   if (!appSettings.active_event_code) { noEventPage(); return; }
   loadingPage();
 
-  const [schedData, allianceData, rankData] = await Promise.all([
+  const season = appSettings.active_season || 2025;
+  const [schedData, allianceData, rankData, oprResult] = await Promise.all([
     API.getPlayoffSchedule().catch(() => null),
     API.getAlliances().catch(() => null),
     API.getRankings().catch(() => null),
+    API.ftcscoutEventOprs(appSettings.active_event_code, season).catch(() => null),
   ]);
   if (currentPage !== 'playoffs') return;  // stale fetch — user navigated away
+  setOprMapFrom(oprResult);
 
   const matches   = schedData?.schedule || [];
   const alliances = allianceData?.alliances || allianceData?.Alliances || [];
@@ -454,6 +511,20 @@ function playoffMatchRow(m, aMap) {
   const winTag = played
     ? `<span class="po-win-tag" style="color:${isTie ? 'var(--yellow)' : m.redWins ? '#ff8a94' : 'var(--accent2)'}">${isTie ? 'TIE' : (m.redWins ? 'RED' : 'BLUE') + ' WINS'}</span>`
     : '';
+  // Favored/Unfavored for upcoming matches (OPR)
+  let favLine = '';
+  if (!played && window._oprMap && Object.keys(window._oprMap).length) {
+    const pred = oprPredictSides(red, blue, window._oprMap);
+    if (pred.hasData) {
+      const ourSide = isOurs ? (m.teams.find(t => t.teamNumber == TEAM_NUMBER)?.station?.startsWith('Red') ? 'Red' : 'Blue') : null;
+      const verdict = pred.winner === 'Tie'
+        ? `<span style="color:var(--yellow);font-weight:700">Toss-up</span>`
+        : ourSide
+          ? `<span style="color:${pred.winner === ourSide ? 'var(--green)' : 'var(--red)'};font-weight:700">${pred.winner === ourSide ? 'Favored' : 'Unfavored'}</span><span>${pred.confidence}%</span>`
+          : `<span style="color:${pred.winner === 'Red' ? '#ff8a94' : 'var(--accent2)'};font-weight:700">${pred.winner} favored</span><span>${pred.confidence}%</span>`;
+      favLine = `<div class="match-sub-stats">${verdict}${pairChip('OPR', pred.redOPR.toFixed(0), pred.blueOPR.toFixed(0))}</div>`;
+    }
+  }
   return `
     <div class="match-row ${isOurs ? 'our-match' : ''}" style="align-items:flex-start">
       <div style="min-width:54px">
@@ -463,6 +534,7 @@ function playoffMatchRow(m, aMap) {
       <div class="match-alliances" style="flex:1">
         <div class="alliance-teams">${aBadge(red)}${red.map(t => teamChipNamed(t, 'red')).join('')}</div>
         <div class="alliance-teams">${aBadge(blue)}${blue.map(t => teamChipNamed(t, 'blue')).join('')}</div>
+        ${favLine}
       </div>
       ${score}
     </div>`;

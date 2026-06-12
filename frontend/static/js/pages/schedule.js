@@ -39,6 +39,8 @@ async function schedule() {
     });
   }
 
+  window._oprMap = oprMap;  // shared with the match detail modal / other pages
+
   if (!matches.length) {
     renderPage('<div class="empty-state"><div class="empty-icon">◷</div><div>No schedule yet.</div></div>');
     return;
@@ -63,14 +65,7 @@ async function schedule() {
   function predictMatch(m) {
     const redTeams  = (m.teams || []).filter(t => t.station?.startsWith('Red'));
     const blueTeams = (m.teams || []).filter(t => t.station?.startsWith('Blue'));
-    const redOPR  = redTeams.reduce((s, t) => s + (oprMap[t.teamNumber]?.total || 0), 0);
-    const blueOPR = blueTeams.reduce((s, t) => s + (oprMap[t.teamNumber]?.total || 0), 0);
-    const diff    = redOPR - blueOPR;
-    const totalOPR = Math.max(redOPR + blueOPR, 1);
-    const rawConf  = Math.min(Math.abs(diff) / (totalOPR * 0.4), 1);
-    const confidence = Math.round(rawConf * 100);
-    const winner = diff > 0 ? 'Red' : diff < 0 ? 'Blue' : 'Tie';
-    return { winner, confidence, redOPR, blueOPR };
+    return oprPredictSides(redTeams, blueTeams, oprMap);
   }
 
   function teamLabel(t, alliance) {
@@ -287,6 +282,8 @@ function openMatchDetail(matchNumber) {
           ${blue.map(t=>teamDetailRow(t,'blue')).join('')}
         </div>
 
+        <div id="md-advanced"></div>
+
         ${m.actualStartTime?`<div style="margin-top:.75rem;font-size:.68rem;font-family:var(--mono);color:var(--text3)">
           Started: ${new Date(m.actualStartTime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'})}
           ${m.postResultTime?` · Posted: ${new Date(m.postResultTime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`:''}
@@ -296,4 +293,35 @@ function openMatchDetail(matchNumber) {
   document.body.appendChild(modal);
   document.getElementById('md-back').addEventListener('click', ()=>modal.remove());
   document.getElementById('md-close').addEventListener('click', ()=>modal.remove());
+  if (appSettings.advanced_predictions !== false) _fillMatchAdvanced(m, red, blue);
+}
+
+// Advanced favoring: per-component OPR comparison (Settings → Pages toggle).
+// Loads the OPR map on demand when the modal is opened from a page that
+// didn't fetch it (e.g. the dashboard).
+async function _fillMatchAdvanced(m, red, blue) {
+  let oprMap = window._oprMap;
+  if (!oprMap || !Object.keys(oprMap).length) {
+    const season = appSettings.active_season || 2025;
+    const res = await API.ftcscoutEventOprs(appSettings.active_event_code, season).catch(()=>null);
+    oprMap = {};
+    (res?.oprList || []).forEach(t => {
+      if (t.teamNumber) oprMap[t.teamNumber] = {total: t.opr||0, auto: t.autoOpr||0, teleop: t.dcOpr||0, endgame: t.egOpr||0};
+    });
+    window._oprMap = oprMap;
+  }
+  const el = document.getElementById('md-advanced');
+  if (!el) return;  // modal already closed
+  const pred = oprPredictSides(red, blue, oprMap);
+  if (!pred.hasData) return;
+  const played = m.scoreRedFinal !== null && m.scoreRedFinal !== undefined;
+  const verdict = played ? '' : pred.winner === 'Tie'
+    ? `· <span style="color:var(--yellow)">Toss-up</span>`
+    : `· <span style="color:${pred.winner === 'Red' ? '#ff8a94' : 'var(--accent2)'}">${pred.winner} favored ${pred.confidence}%</span>`;
+  el.innerHTML = `
+    <div style="margin-top:.75rem">
+      <div class="section-label" style="margin-bottom:.25rem">OPR Favoring ${verdict}</div>
+      ${oprBreakdownHtml(pred)}
+      <div style="font-size:.6rem;font-family:var(--mono);color:var(--text3);margin-top:.3rem">Alliance sums of season npOPR per phase (FTCScout)</div>
+    </div>`;
 }

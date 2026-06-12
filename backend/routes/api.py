@@ -105,6 +105,7 @@ def get_settings():
         'nav':               config.nav_config(),
         'bigscreen':         config.bigscreen_config(),
         'awards_highlight_ours': config.awards_highlight_ours(),
+        'advanced_predictions':  config.advanced_predictions(),
         'ftc_api_username':  username,
         'has_credentials':   bool(username and api_key),
     })
@@ -150,6 +151,8 @@ def update_settings():
         AppSettings.set('bigscreen_config', json.dumps(bs))
     if data.get('awards_highlight_ours') is not None:
         AppSettings.set('awards_highlight_ours', '1' if data['awards_highlight_ours'] else '0')
+    if data.get('advanced_predictions') is not None:
+        AppSettings.set('advanced_predictions', '1' if data['advanced_predictions'] else '0')
     return jsonify({'success': True})
 
 

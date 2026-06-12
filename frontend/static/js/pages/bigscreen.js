@@ -29,14 +29,17 @@ async function bigscreen() {
 
   async function load() {
     const wantPlayoffs = enabled.includes('playoffs');
-    const [schedData, rankData, fieldsData, poData, allianceData] = await Promise.all([
+    const season = appSettings.active_season || 2025;
+    const [schedData, rankData, fieldsData, poData, allianceData, oprResult] = await Promise.all([
       enabled.includes('schedule') ? API.getSchedule('qual').catch(() => null) : null,
       enabled.includes('rankings') ? API.getRankings().catch(() => null) : null,
       enabled.includes('schedule') ? API.getScheduleFields('qual').catch(() => null) : null,
       wantPlayoffs ? API.getPlayoffSchedule().catch(() => null) : null,
       wantPlayoffs ? API.getAlliances().catch(() => null) : null,
+      wantPlayoffs && !window._oprMap ? API.ftcscoutEventOprs(appSettings.active_event_code, season).catch(() => null) : null,
     ]);
     if (currentPage !== 'bigscreen') return;  // stale fetch — user navigated away
+    setOprMapFrom(oprResult);
     data.matches        = schedData?.schedule || [];
     data.rankings       = rankData?.rankings || rankData?.Rankings || [];
     data.fieldsByMatch  = fieldsData?.fieldsByMatch || {};
