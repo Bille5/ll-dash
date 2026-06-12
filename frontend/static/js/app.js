@@ -120,6 +120,62 @@ function flagBtnHtml(cat, active, team, compact=false) {
   return `<button class="flag-btn ${active?'active':''}" data-flag="${cat.key}"${team!=null?` data-team="${team}"`:''} title="${escHtml(cat.label)}" style="${style}" onclick="event.stopPropagation()">${label}</button>`;
 }
 
+// ── OPR match prediction (shared by schedule, sim, playoffs, match modal) ──
+// teams: array of team numbers or {teamNumber} objects; oprMap entries are
+// {total, auto, teleop, endgame} from FTCScout.
+function oprSum(teams, oprMap, key = 'total') {
+  return (teams || []).reduce((s, t) => {
+    const num = typeof t === 'number' ? t : t.teamNumber;
+    return s + (oprMap?.[num]?.[key] || 0);
+  }, 0);
+}
+function oprPredictSides(redTeams, blueTeams, oprMap) {
+  const comp = {};
+  ['total', 'auto', 'teleop', 'endgame'].forEach(k => {
+    comp[k] = [oprSum(redTeams, oprMap, k), oprSum(blueTeams, oprMap, k)];
+  });
+  const [redOPR, blueOPR] = comp.total;
+  const diff = redOPR - blueOPR;
+  const totalOPR = Math.max(redOPR + blueOPR, 1);
+  const rawConf = Math.min(Math.abs(diff) / (totalOPR * 0.4), 1);
+  return {
+    winner: diff > 0 ? 'Red' : diff < 0 ? 'Blue' : 'Tie',
+    confidence: Math.round(rawConf * 100),
+    redWinProb: 0.5 + (diff >= 0 ? 1 : -1) * rawConf / 2,
+    redOPR, blueOPR, diff, comp,
+    hasData: redOPR > 0 || blueOPR > 0,
+  };
+}
+// Compact component-OPR comparison table (Auto/Teleop/Endgame/Total)
+function oprBreakdownHtml(pred) {
+  if (!pred?.hasData) return '';
+  const row = (label, r, b) => `
+    <div class="opr-cmp-row${label === 'Total' ? ' opr-cmp-total' : ''}">
+      <span class="opr-cmp-lbl">${label}</span>
+      <span class="opr-cmp-r ${r > b ? 'opr-cmp-win' : ''}">${r.toFixed(1)}</span>
+      <span class="opr-cmp-sep">·</span>
+      <span class="opr-cmp-b ${b > r ? 'opr-cmp-win' : ''}">${b.toFixed(1)}</span>
+    </div>`;
+  return `
+    <div class="opr-cmp">
+      ${row('Auto', pred.comp.auto[0], pred.comp.auto[1])}
+      ${row('Teleop', pred.comp.teleop[0], pred.comp.teleop[1])}
+      ${row('Endgame', pred.comp.endgame[0], pred.comp.endgame[1])}
+      ${row('Total', pred.comp.total[0], pred.comp.total[1])}
+    </div>`;
+}
+
+// ── Per-device nav hiding (localStorage, layered on the deployment config) ──
+function deviceHiddenTabs() {
+  try {
+    const v = JSON.parse(localStorage.getItem('device_hidden_tabs') || '[]');
+    return Array.isArray(v) ? v.filter(k => k !== 'dashboard') : [];
+  } catch (e) { return []; }
+}
+function setDeviceHiddenTabs(keys) {
+  localStorage.setItem('device_hidden_tabs', JSON.stringify(keys.filter(k => k !== 'dashboard')));
+}
+
 // ── Boot ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
@@ -193,8 +249,9 @@ function navConfig(){
 function buildNav(){
   const el = document.getElementById('bottom-nav');
   if (!el) return;
+  const hidden = deviceHiddenTabs();
   el.innerHTML = navConfig()
-    .filter(n => n.visible && NAV_PAGES[n.key])
+    .filter(n => n.visible && NAV_PAGES[n.key] && !hidden.includes(n.key))
     .map(n => `
       <button class="nav-btn ${n.key===currentPage?'active':''}" data-page="${n.key}">
         <span class="nav-icon">${NAV_PAGES[n.key].icon}</span>
@@ -443,6 +500,7 @@ function renderSettingsPages(c){
   let nav = JSON.parse(JSON.stringify(navConfig()));
   const bs = JSON.parse(JSON.stringify(appSettings.bigscreen || {panels:{schedule:true,rankings:true,playoffs:true},cycle_seconds:15,refresh_seconds:45}));
   let highlightOurs = appSettings.awards_highlight_ours !== false;
+  let advPred = appSettings.advanced_predictions !== false;
 
   function draw(){
     c.innerHTML=`
@@ -486,6 +544,23 @@ function renderSettingsPages(c){
         </div>
       </div>
       <div class="setting-group">
+        <label class="setting-label">On This Device</label>
+        <div class="setting-hint" style="margin:0 0 .5rem">Untick tabs you don't need on this phone/tablet. Only affects this device — the shared settings above apply everywhere.</div>
+        <div class="device-tab-grid">${nav.filter(n=>n.visible&&n.key!=='dashboard'&&NAV_PAGES[n.key]).map(n=>`
+          <label class="sf-req-label" style="margin:0;font-size:.78rem">
+            <input type="checkbox" class="dev-vis" data-k="${n.key}" ${deviceHiddenTabs().includes(n.key)?'':'checked'}/>
+            ${NAV_PAGES[n.key].icon} ${escHtml(NAV_PAGES[n.key].label)}
+          </label>`).join('')}
+        </div>
+      </div>
+      <div class="setting-group">
+        <label class="setting-label">Predictions</label>
+        <label class="sf-req-label" style="margin:0;font-size:.8rem">
+          <input type="checkbox" id="adv-pred" ${advPred?'checked':''}/>
+          Advanced favoring — compare Auto / Teleop / Endgame OPR in match details &amp; playoff cards
+        </label>
+      </div>
+      <div class="setting-group">
         <label class="setting-label">Awards</label>
         <label class="sf-req-label" style="margin:0;font-size:.8rem">
           <input type="checkbox" id="awards-ours" ${highlightOurs?'checked':''}/>
@@ -493,6 +568,15 @@ function renderSettingsPages(c){
         </label>
       </div>
       <button class="btn btn-primary btn-block" id="pages-save">Save Pages</button>`;
+
+    // Device-local tab hiding applies immediately (it's not a server setting)
+    c.querySelectorAll('.dev-vis').forEach(el=>el.addEventListener('change',()=>{
+      const hidden = [...c.querySelectorAll('.dev-vis')].filter(x=>!x.checked).map(x=>x.dataset.k);
+      setDeviceHiddenTabs(hidden);
+      buildNav();
+      if (hidden.includes(currentPage)) navigateTo('dashboard');
+      showToast('Tabs updated on this device');
+    }));
 
     c.querySelectorAll('[data-up]').forEach(b=>b.addEventListener('click',()=>{sync();const i=+b.dataset.up;[nav[i-1],nav[i]]=[nav[i],nav[i-1]];draw();}));
     c.querySelectorAll('[data-down]').forEach(b=>b.addEventListener('click',()=>{sync();const i=+b.dataset.down;[nav[i],nav[i+1]]=[nav[i+1],nav[i]];draw();}));
@@ -503,15 +587,17 @@ function renderSettingsPages(c){
       bs.cycle_seconds  =parseInt(document.getElementById('bs-cycle').value)||15;
       bs.refresh_seconds=parseInt(document.getElementById('bs-refresh').value)||45;
       highlightOurs=document.getElementById('awards-ours').checked;
+      advPred=document.getElementById('adv-pred').checked;
     }
 
     document.getElementById('pages-save').addEventListener('click',async()=>{
       sync();
       if (!Object.values(bs.panels||{}).some(Boolean)){showToast('Enable at least one Big Screen panel');return;}
       try{
-        await API.saveSettings({nav_config:nav, bigscreen_config:bs, awards_highlight_ours:highlightOurs});
+        await API.saveSettings({nav_config:nav, bigscreen_config:bs, awards_highlight_ours:highlightOurs, advanced_predictions:advPred});
       }catch(e){showToast('Save failed');return;}
       appSettings.nav=nav; appSettings.bigscreen=bs; appSettings.awards_highlight_ours=highlightOurs;
+      appSettings.advanced_predictions=advPred;
       buildNav();
       // if the page we're on just got hidden, fall back to the dashboard
       const visible = nav.filter(n=>n.visible).map(n=>n.key);

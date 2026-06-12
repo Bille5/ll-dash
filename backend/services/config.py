@@ -213,6 +213,10 @@ def awards_highlight_ours():
     return get('awards_highlight_ours', default='1') != '0'
 
 
+def advanced_predictions():
+    return get('advanced_predictions', default='1') != '0'
+
+
 def branding():
     """Branding info for templates / the manifest. Never raises — falls back
     to defaults if the database isn't reachable yet (e.g. first boot)."""
