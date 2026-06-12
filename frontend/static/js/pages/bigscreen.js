@@ -123,41 +123,41 @@ async function bigscreen() {
   }
 
   function playoffPanel() {
-    const aMap = allianceMap(data.alliances);
-    const rounds = groupPlayoffRounds(data.playoffMatches);
-    const aBadge = list => {
-      const n = list.map(t => aMap[t.teamNumber]).find(v => v != null);
-      return n != null ? `<span class="bs-abadge">A${n}</span>` : '';
-    };
-    const rows = rounds.map(round => `
-      <div class="bs-round-label">${escHtml(round.label)}</div>
-      ${round.matches.map(m => {
-        const red  = (m.teams || []).filter(t => t.station?.startsWith('Red'));
-        const blue = (m.teams || []).filter(t => t.station?.startsWith('Blue'));
-        const played = m.scoreRedFinal !== null && m.scoreRedFinal !== undefined;
-        const ours = m.teams?.some(t => t.teamNumber == TEAM_NUMBER);
-        return `
-          <div class="bs-match ${ours ? 'bs-ours' : ''} ${played ? 'bs-played' : ''}">
-            <div class="bs-qnum" style="font-size:clamp(.7rem,1vw,1rem)">${escHtml((m.description || 'M' + m.matchNumber).replace(/Match/i, 'M'))}</div>
-            <div class="bs-teams">${aBadge(red)}${chips(red, 'red')}</div>
-            ${scoreOrTime(m)}
-            <div class="bs-teams bs-right">${chips(blue, 'blue')}${aBadge(blue)}</div>
-            <div class="bs-field"></div>
-          </div>`;
-      }).join('')}`).join('');
-    const lineup = data.alliances.length ? `
-      <div class="bs-alliance-strip">
-        ${data.alliances.map(a => {
-          const members = [a.captain, a.round1, a.round2, a.round3].filter(t => t != null && t > 0);
-          const ours = members.some(t => t == TEAM_NUMBER);
-          return `<span class="bs-alliance-chip ${ours ? 'bs-ours' : ''}"><strong>A${a.number}</strong> ${members.join(' · ')}</span>`;
-        }).join('')}
-      </div>` : '';
+    const bracket = buildBracketHtml(data.playoffMatches, data.alliances);
+    let body;
+    if (bracket) {
+      body = bracket;
+    } else if (data.playoffMatches.length) {
+      // non-double-elim format → grouped rounds list
+      const aMap = allianceMap(data.alliances);
+      const rounds = groupPlayoffRounds(data.playoffMatches);
+      const aBadge = list => {
+        const n = list.map(t => aMap[t.teamNumber]).find(v => v != null);
+        return n != null ? `<span class="bs-abadge">A${n}</span>` : '';
+      };
+      body = rounds.map(round => `
+        <div class="bs-round-label">${escHtml(round.label)}</div>
+        ${round.matches.map(m => {
+          const red  = (m.teams || []).filter(t => t.station?.startsWith('Red'));
+          const blue = (m.teams || []).filter(t => t.station?.startsWith('Blue'));
+          const played = m.scoreRedFinal !== null && m.scoreRedFinal !== undefined;
+          const ours = m.teams?.some(t => t.teamNumber == TEAM_NUMBER);
+          return `
+            <div class="bs-match ${ours ? 'bs-ours' : ''} ${played ? 'bs-played' : ''}">
+              <div class="bs-qnum" style="font-size:clamp(.7rem,1vw,1rem)">${escHtml((m.description || 'M' + m.matchNumber).replace(/Match/i, 'M'))}</div>
+              <div class="bs-teams">${aBadge(red)}${chips(red, 'red')}</div>
+              ${scoreOrTime(m)}
+              <div class="bs-teams bs-right">${chips(blue, 'blue')}${aBadge(blue)}</div>
+              <div class="bs-field"></div>
+            </div>`;
+        }).join('')}`).join('');
+    } else {
+      body = '<div class="empty-state">No playoff matches yet.</div>';
+    }
     return `
       <section class="bs-panel bs-playoffs">
         <div class="bs-panel-title">Playoffs</div>
-        ${lineup}
-        ${rows || '<div class="empty-state">No playoff matches yet.</div>'}
+        ${body}
       </section>`;
   }
 

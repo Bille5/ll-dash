@@ -398,6 +398,51 @@ html.compact{font-size:13.5px}
 .bs-alliance-chip strong{color:var(--accent)}
 .bs-alliance-chip.bs-ours{border-color:var(--accent)}
 
+/* ── Double-elimination bracket (Playoffs page + Big Screen) ───
+   Sized in em so the whole bracket scales with the container font size. */
+.bk-root{font-size:.78rem;overflow-x:auto;padding-bottom:.5em}
+.bk-section{margin-bottom:1.1em}
+.bk-section-title{font-size:.8em;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text2);font-family:var(--mono);margin-bottom:.55em}
+.bk-grid{display:flex;gap:1.7em;align-items:stretch;min-width:max-content}
+.bk-col{display:flex;flex-direction:column;justify-content:space-around;gap:1em;min-width:15em}
+.bk-finals-col{justify-content:center}
+.bk-pair,.bk-single{display:flex;flex-direction:column;justify-content:space-around;gap:1em;flex:1;position:relative}
+.bk-single{justify-content:center}
+.bk-pair::after{content:'';position:absolute;right:-1.05em;top:25%;height:50%;width:.85em;border:2px solid var(--bhi);border-left:none;border-radius:0 .4em .4em 0}
+.bk-single::after{content:'';position:absolute;right:-1.05em;top:50%;width:.85em;height:2px;background:var(--bhi)}
+.bk-col:last-child .bk-pair::after,.bk-col:last-child .bk-single::after,
+.bk-finals-col .bk-pair::after,.bk-finals-col .bk-single::after{display:none}
+.bk-match{background:var(--bg3);border:1px solid var(--border);border-radius:.55em;padding:.5em .6em}
+.bk-match.bk-decided{}
+.bk-match-head{display:flex;gap:.55em;align-items:baseline;font-family:var(--mono);font-size:.72em;color:var(--text3);margin-bottom:.35em}
+.bk-match-head > span:first-child{font-weight:800;color:var(--text2);font-size:1.05em}
+.bk-dest{margin-left:auto}
+.bk-time{color:var(--accent2);font-weight:700;font-family:var(--mono)}
+.bk-replay{color:var(--yellow)}
+.bk-side{display:flex;align-items:baseline;gap:.45em;padding:.24em .35em;border-radius:.35em;border-left:3px solid transparent}
+.bk-side.red{border-left-color:rgba(255,71,87,.55)}
+.bk-side.blue{border-left-color:rgba(71,200,255,.55)}
+.bk-side .bk-a{font-family:var(--mono);font-weight:800}
+.bk-side.red .bk-a{color:#ff8a94}
+.bk-side.blue .bk-a{color:var(--accent2)}
+html.light .bk-side.red .bk-a{color:#c4313f}
+.bk-teams{font-family:var(--mono);font-size:.82em;color:var(--text2);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bk-score{font-family:var(--mono);font-weight:800;min-width:2em;text-align:right}
+.bk-side.bk-win{background:rgba(46,213,115,.09)}
+.bk-side.bk-win .bk-score{color:var(--green)}
+.bk-side.bk-win::after{content:'✓';color:var(--green);font-size:.8em;font-weight:800}
+.bk-side.bk-lose{opacity:.5}
+.bk-tbd{font-size:.82em;color:var(--text3);font-style:italic;flex:1}
+.bk-side.bk-ours{outline:1.5px solid var(--accent)}
+.bk-match.bk-finals{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.bk-final-games{margin-top:.45em;border-top:1px solid var(--border);padding-top:.4em}
+.bk-final-game{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--mono);font-size:.8em;color:var(--text2);padding:.16em 0}
+.bk-final-label{color:var(--text3)}
+.bk-final-score b{font-weight:700;color:var(--text2)}
+.bk-final-score .bk-fw{color:var(--green);font-weight:800}
+.bk-champion{margin-top:.5em;background:rgba(255,255,255,.04);color:var(--accent);font-weight:800;text-align:center;border:1px solid var(--accent);border-radius:.45em;padding:.4em;font-size:.9em}
+.bs-playoffs .bk-root{font-size:clamp(.68rem,.95vw,1.05rem)}
+
 /* ── Awards page ─── */
 .award-row{display:flex;align-items:baseline;gap:.55rem;padding:.5rem 0;border-bottom:1px solid var(--border)}
 .award-row:last-child{border-bottom:none}
