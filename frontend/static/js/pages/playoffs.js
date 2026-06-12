@@ -1,11 +1,19 @@
 // ── Playoffs / bracket page ───────────────────────────────────
 // Renders the official FTC double-elimination bracket (upper + lower
-// bracket with advancement, per Game Manual section 13.7) for 2/4/6/8
-// alliance events. Slots are resolved from actual match results by
-// matching alliance pairs, so tie replays are handled and the bracket
-// fills in as the tournament progresses. Events that don't fit the
-// double-elim structure (e.g. legacy Semifinal/Finals format) fall back
-// to a grouped match list.
+// bracket with advancement, per Competition Manual section 13.7) for
+// 2/4/6/8 alliance events. Slots are resolved from actual match results
+// by matching alliance pairs, so tie replays are handled and the bracket
+// fills in as the tournament progresses.
+//
+// Alliance membership comes from /alliances when available, but some
+// events (e.g. dual-division parents like Premier events) publish
+// alliances with no rosters — in that case membership is derived from
+// the playoff matches themselves: per the manual, in round 1 (and a
+// 2-alliance finals) the higher seed is the red alliance, which anchors
+// the seeding; teams appearing later on a known alliance's side (3-team
+// alliances, backups) are folded into that alliance as they play.
+// Events that don't fit the double-elim structure fall back to a
+// grouped match list.
 
 function groupPlayoffRounds(matches) {
   const rounds = [];           // [{label, matches:[...]}] in matchNumber order
@@ -34,7 +42,7 @@ function allianceMap(alliances) {
   return map;
 }
 
-// ── Official FTC double-elim templates (Game Manual Tables 13-3..13-6) ──
+// ── Official FTC double-elim templates (Competition Manual 13.7) ──
 // refs: {seed:n} = Alliance n, {w:k} = winner of Mk, {l:k} = loser of Mk
 // w/l: where the winner/loser goes ('Mk', 'F' = finals, or a placement)
 const DE_TEMPLATES = {
@@ -86,35 +94,36 @@ const DE_TEMPLATES = {
   },
 };
 
-// Alliance number for one side of a match (majority vote of its teams)
-function _sideAlliance(teams, station, aMap) {
-  const counts = {};
-  teams.filter(t => t.station?.startsWith(station)).forEach(t => {
-    const a = aMap[t.teamNumber];
-    if (a != null) counts[a] = (counts[a] || 0) + 1;
-  });
-  let best = null;
-  Object.entries(counts).forEach(([a, n]) => { if (best == null || n > counts[best]) best = a; });
-  return best != null ? parseInt(best) : null;
+function _sideTeams(m, station) {
+  return (m.teams || []).filter(t => t.station?.startsWith(station)).map(t => t.teamNumber);
 }
 
-// Resolve the bracket: assign API matches to template slots by alliance
-// pair, following winners/losers through the bracket. Returns null if the
-// matches don't fit the double-elim structure.
+// Resolve the bracket. Returns {template, slots, finals, rosters} or null
+// if the matches don't fit the double-elim structure.
 function resolveBracket(alliances, apiMatches) {
-  const template = DE_TEMPLATES[alliances.length];
+  const template = DE_TEMPLATES[(alliances || []).length];
   if (!template) return null;
   if (apiMatches.some(m => /semifinal/i.test(m.description || ''))) return null;  // legacy format
 
   const aMap = allianceMap(alliances);
   const pool = [...apiMatches]
     .sort((a, b) => (a.matchNumber || 0) - (b.matchNumber || 0))
-    .map(m => ({
-      m,
-      redA:  _sideAlliance(m.teams || [], 'Red', aMap),
-      blueA: _sideAlliance(m.teams || [], 'Blue', aMap),
-      used: false,
-    }));
+    .map(m => ({m, used: false}));
+
+  // Alliance number for one side, from the (growing) team→alliance map
+  const sideAlliance = (m, station) => {
+    const counts = {};
+    _sideTeams(m, station).forEach(t => {
+      const a = aMap[t];
+      if (a != null) counts[a] = (counts[a] || 0) + 1;
+    });
+    let best = null;
+    Object.keys(counts).forEach(a => { if (best == null || counts[a] > counts[best]) best = a; });
+    return best != null ? parseInt(best) : null;
+  };
+  const hasRoster = a => Object.values(aMap).includes(a);
+  const enroll = (m, station, allianceNum) =>
+    _sideTeams(m, station).forEach(t => { if (aMap[t] == null) aMap[t] = allianceNum; });
 
   const slots = {};
   const resolveRef = ref => {
@@ -126,20 +135,43 @@ function resolveBracket(alliances, apiMatches) {
   };
   const refLabel = ref => ref.seed ? `Alliance ${ref.seed}` : ref.w ? `Winner M${ref.w}` : `Loser M${ref.l}`;
 
-  // Consume matches between two alliances until one is decided (handles tie replays)
-  function consumePair(aA, aB) {
+  // Consume matches between two alliances until one is decided (handles tie
+  // replays). When rosters are missing/partial, sides are inferred:
+  //  - one side known and expected → the other side joins the other alliance
+  //  - both sides unknown and neither alliance has any roster yet → anchor
+  //    the next unused match by color (red = expected red, per the manual)
+  function consumePair(expRedA, expBlueA) {
     const games = [];
     let winnerA = null;
     for (const r of pool) {
-      if (r.used || r.redA == null || r.blueA == null) continue;
-      const same = (r.redA === aA && r.blueA === aB) || (r.redA === aB && r.blueA === aA);
-      if (!same) continue;
+      if (r.used) continue;
+      let redA = sideAlliance(r.m, 'Red'), blueA = sideAlliance(r.m, 'Blue');
+      if (redA != null && blueA != null) {
+        const same = (redA === expRedA && blueA === expBlueA) || (redA === expBlueA && blueA === expRedA);
+        if (!same) continue;
+      } else if (redA != null && blueA == null && (redA === expRedA || redA === expBlueA)) {
+        blueA = redA === expRedA ? expBlueA : expRedA;
+        enroll(r.m, 'Blue', blueA);
+      } else if (blueA != null && redA == null && (blueA === expRedA || blueA === expBlueA)) {
+        redA = blueA === expRedA ? expBlueA : expRedA;
+        enroll(r.m, 'Red', redA);
+      } else if (redA == null && blueA == null && !hasRoster(expRedA) && !hasRoster(expBlueA)) {
+        redA = expRedA; blueA = expBlueA;       // round-1 anchor: red = higher seed
+        enroll(r.m, 'Red', redA);
+        enroll(r.m, 'Blue', blueA);
+      } else {
+        continue;
+      }
+      // fold in any still-unmapped teams (3-team alliances, substitutes)
+      enroll(r.m, 'Red', redA);
+      enroll(r.m, 'Blue', blueA);
       r.used = true;
+      r.redA = redA; r.blueA = blueA;
       games.push(r);
       const played = r.m.scoreRedFinal !== null && r.m.scoreRedFinal !== undefined;
       if (!played) break;                       // scheduled, not yet played
       if (r.m.redWins || r.m.blueWins) {        // decided (ties keep consuming replays)
-        winnerA = r.m.redWins ? r.redA : r.blueA;
+        winnerA = r.m.redWins ? redA : blueA;
         break;
       }
     }
@@ -162,51 +194,58 @@ function resolveBracket(alliances, apiMatches) {
     slots['M' + t.m] = slot;
   }
 
-  // Finals: red = upper-bracket finalist (needs lowest losses), series until
-  // one alliance reaches 2 total losses. Tie matches don't count.
+  // Finals series: red = upper-bracket finalist; an alliance is champion
+  // when the other reaches 2 total losses (the lower-bracket finalist
+  // arrives with 1; in a 2-alliance event both start at 0 = best of 3).
   const f = template.finals;
   const fRedA = resolveRef(f.red), fBlueA = resolveRef(f.blue);
   const finals = {redA: fRedA, blueA: fBlueA,
                   redLabel: refLabel(f.red), blueLabel: refLabel(f.blue),
+                  bestOf3: f.blueLosses === 0,
                   games: [], championA: null};
   if (fRedA != null && fBlueA != null) {
-    let losses = {[fRedA]: f.redLosses, [fBlueA]: f.blueLosses};
-    for (const r of pool) {
-      if (r.used || r.redA == null || r.blueA == null) continue;
-      const same = (r.redA === fRedA && r.blueA === fBlueA) || (r.redA === fBlueA && r.blueA === fRedA);
-      if (!same) continue;
-      r.used = true;
-      finals.games.push(r);
-      const played = r.m.scoreRedFinal !== null && r.m.scoreRedFinal !== undefined;
-      if (!played) break;
-      if (r.m.redWins || r.m.blueWins) {
-        const loserA = r.m.redWins ? r.blueA : r.redA;
-        losses[loserA]++;
-        if (losses[loserA] >= 2) { finals.championA = loserA === fRedA ? fBlueA : fRedA; break; }
-      }
+    const losses = {[fRedA]: f.redLosses, [fBlueA]: f.blueLosses};
+    while (finals.championA == null) {
+      const {games, winnerA} = consumePair(fRedA, fBlueA);
+      if (!games.length) break;
+      finals.games.push(...games);
+      if (winnerA == null) break;               // last game unplayed/tied
+      const loserA = winnerA === fRedA ? fBlueA : fRedA;
+      losses[loserA]++;
+      if (losses[loserA] >= 2) finals.championA = winnerA;
     }
   }
 
   // Played matches the template couldn't place → not really double-elim
   if (pool.some(r => !r.used && r.m.scoreRedFinal !== null && r.m.scoreRedFinal !== undefined)) return null;
 
-  return {template, slots, finals};
+  // Display rosters: /alliances members + everything learned from matches
+  const rosters = {};
+  (alliances || []).forEach(a => {
+    rosters[a.number] = [a.captain, a.round1, a.round2, a.round3, a.backup].filter(t => t != null && t > 0);
+  });
+  Object.entries(aMap).forEach(([team, num]) => {
+    rosters[num] = rosters[num] || [];
+    if (!rosters[num].includes(parseInt(team))) rosters[num].push(parseInt(team));
+  });
+
+  return {template, slots, finals, rosters};
 }
 
 // ── Bracket HTML (shared by Playoffs page and Big Screen) ─────
-function _allianceTeams(alliances, num) {
-  const a = (alliances || []).find(x => x.number === num);
-  if (!a) return '';
-  return [a.captain, a.round1, a.round2, a.round3].filter(t => t != null && t > 0).join(' · ');
+function _rosterTeams(rosters, num) {
+  return (rosters[num] || []).join(' · ');
+}
+function _rosterOurs(rosters, num) {
+  return (rosters[num] || []).some(t => t == TEAM_NUMBER);
 }
 
-function _bkSide(color, allianceNum, label, score, isWinner, decided, alliances) {
+function _bkSide(color, allianceNum, label, score, isWinner, decided, rosters) {
   const known = allianceNum != null;
-  const ours = known && (alliances || []).some(a =>
-    a.number === allianceNum && [a.captain, a.round1, a.round2, a.round3].some(t => t == TEAM_NUMBER));
+  const ours = known && _rosterOurs(rosters, allianceNum);
   return `
     <div class="bk-side ${color} ${isWinner ? 'bk-win' : decided ? 'bk-lose' : ''} ${ours ? 'bk-ours' : ''}">
-      ${known ? `<span class="bk-a">A${allianceNum}</span><span class="bk-teams">${_allianceTeams(alliances, allianceNum)}</span>`
+      ${known ? `<span class="bk-a">A${allianceNum}</span><span class="bk-teams">${_rosterTeams(rosters, allianceNum)}</span>`
               : `<span class="bk-tbd">${escHtml(label || 'TBD')}</span>`}
       <span class="bk-score">${score ?? ''}</span>
     </div>`;
@@ -214,14 +253,14 @@ function _bkSide(color, allianceNum, label, score, isWinner, decided, alliances)
 
 function _destLabel(d) { return d === 'F' ? 'Finals' : d; }
 
-function _bkMatchCard(slot, alliances) {
+function _bkMatchCard(slot, rosters) {
   const m = slot.match?.m;
   const played  = m && m.scoreRedFinal !== null && m.scoreRedFinal !== undefined;
   const decided = slot.winnerA != null;
   // map slot sides to the actual match's red/blue for scores
-  let redScore = null, blueScore = null, redIsMatchRed = true;
+  let redScore = null, blueScore = null;
   if (m && played) {
-    redIsMatchRed = slot.match.redA === slot.redA;
+    const redIsMatchRed = slot.match.redA === slot.redA;
     redScore  = redIsMatchRed ? m.scoreRedFinal : m.scoreBlueFinal;
     blueScore = redIsMatchRed ? m.scoreBlueFinal : m.scoreRedFinal;
   }
@@ -234,12 +273,12 @@ function _bkMatchCard(slot, alliances) {
         <span class="bk-dest">W→${_destLabel(slot.t.w)} · L→${_destLabel(slot.t.l)}</span>
         ${time ? `<span class="bk-time">${time}</span>` : ''}
       </div>
-      ${_bkSide('red',  slot.redA,  slot.redLabel,  redScore,  decided && slot.winnerA === slot.redA,  decided, alliances)}
-      ${_bkSide('blue', slot.blueA, slot.blueLabel, blueScore, decided && slot.winnerA === slot.blueA, decided, alliances)}
+      ${_bkSide('red',  slot.redA,  slot.redLabel,  redScore,  decided && slot.winnerA === slot.redA,  decided, rosters)}
+      ${_bkSide('blue', slot.blueA, slot.blueLabel, blueScore, decided && slot.winnerA === slot.blueA, decided, rosters)}
     </div>`;
 }
 
-function _bkFinalsCard(finals, alliances) {
+function _bkFinalsCard(finals, rosters) {
   const gameRows = finals.games.map((r, i) => {
     const m = r.m;
     const played = m.scoreRedFinal !== null && m.scoreRedFinal !== undefined;
@@ -257,12 +296,13 @@ function _bkFinalsCard(finals, alliances) {
       </div>`;
   }).join('');
   const champ = finals.championA != null ? `
-    <div class="bk-champion">🏆 Alliance ${finals.championA} — ${_allianceTeams(alliances, finals.championA)}</div>` : '';
+    <div class="bk-champion">🏆 Alliance ${finals.championA} — ${_rosterTeams(rosters, finals.championA)}</div>` : '';
+  const subtitle = finals.bestOf3 ? 'best of 3 — first alliance to 2 wins' : 'lower-bracket alliance must win twice';
   return `
     <div class="bk-match bk-finals">
-      <div class="bk-match-head"><span>FINALS</span><span class="bk-dest">lower-bracket alliance must win twice</span></div>
-      ${_bkSide('red',  finals.redA,  finals.redLabel,  null, finals.championA != null && finals.championA === finals.redA,  finals.championA != null, alliances)}
-      ${_bkSide('blue', finals.blueA, finals.blueLabel, null, finals.championA != null && finals.championA === finals.blueA, finals.championA != null, alliances)}
+      <div class="bk-match-head"><span>FINALS</span><span class="bk-dest">${subtitle}</span></div>
+      ${_bkSide('red',  finals.redA,  finals.redLabel,  null, finals.championA != null && finals.championA === finals.redA,  finals.championA != null, rosters)}
+      ${_bkSide('blue', finals.blueA, finals.blueLabel, null, finals.championA != null && finals.championA === finals.blueA, finals.championA != null, rosters)}
       ${gameRows ? `<div class="bk-final-games">${gameRows}</div>` : ''}
       ${champ}
     </div>`;
@@ -270,7 +310,7 @@ function _bkFinalsCard(finals, alliances) {
 
 // Group a bracket section's slots into columns by round; consecutive slots
 // in a column that feed the same next match get an elbow connector.
-function _bkSection(title, slotList, alliances, extraCol) {
+function _bkSection(title, slotList, rosters, extraCol) {
   const rounds = {};
   slotList.forEach(s => { (rounds[s.t.round] = rounds[s.t.round] || []).push(s); });
   const cols = Object.keys(rounds).sort((a, b) => a - b).map(r => {
@@ -283,7 +323,7 @@ function _bkSection(title, slotList, alliances, extraCol) {
     });
     return `<div class="bk-col">${groups.map(g => `
       <div class="${g.slots.length > 1 ? 'bk-pair' : 'bk-single'}">
-        ${g.slots.map(s => _bkMatchCard(s, alliances)).join('')}
+        ${g.slots.map(s => _bkMatchCard(s, rosters)).join('')}
       </div>`).join('')}</div>`;
   }).join('');
   return `
@@ -293,23 +333,25 @@ function _bkSection(title, slotList, alliances, extraCol) {
     </div>`;
 }
 
-// Full bracket HTML, or null when the data doesn't fit a known bracket.
-function buildBracketHtml(playoffMatches, alliances) {
-  if (!alliances || !alliances.length) return null;
+// Full bracket: {html, rosters} — or null when the data doesn't fit.
+function buildBracket(playoffMatches, alliances) {
   const resolved = resolveBracket(alliances, playoffMatches || []);
   if (!resolved) return null;
   const all = Object.values(resolved.slots);
   const upper = all.filter(s => s.t.bracket === 'upper');
   const lower = all.filter(s => s.t.bracket === 'lower');
-  const finalsCard = _bkFinalsCard(resolved.finals, alliances);
-  if (!upper.length) {  // 2-alliance event: finals only
-    return `<div class="bk-root">${_bkSection('Finals', [], alliances, finalsCard)}</div>`;
-  }
-  return `
-    <div class="bk-root">
-      ${_bkSection('Upper Bracket', upper, alliances, finalsCard)}
-      ${_bkSection('Lower Bracket', lower, alliances)}
-    </div>`;
+  const finalsCard = _bkFinalsCard(resolved.finals, resolved.rosters);
+  const html = upper.length
+    ? `<div class="bk-root">
+         ${_bkSection('Upper Bracket', upper, resolved.rosters, finalsCard)}
+         ${_bkSection('Lower Bracket', lower, resolved.rosters)}
+       </div>`
+    : `<div class="bk-root">${_bkSection('Finals', [], resolved.rosters, finalsCard)}</div>`;
+  return {html, rosters: resolved.rosters};
+}
+
+function buildBracketHtml(playoffMatches, alliances) {
+  return buildBracket(playoffMatches, alliances)?.html || null;
 }
 
 // ── Page ──────────────────────────────────────────────────────
@@ -330,7 +372,11 @@ async function playoffs() {
   rankings.forEach(r => { window._teamNames = window._teamNames || {}; window._teamNames[r.teamNumber] = r.teamName || ''; });
   const aMap = allianceMap(alliances);
 
+  const bracket = buildBracket(matches, alliances);
+
   // ── Alliance lineups ──
+  // Roles (Captain / Pick n) only when /alliances actually has rosters;
+  // otherwise show the membership derived from match data.
   let allianceHtml = '';
   if (alliances.length) {
     allianceHtml = `
@@ -338,18 +384,21 @@ async function playoffs() {
         <div class="card-header"><span class="card-title">Alliances</span></div>
         <div class="po-alliance-grid">
           ${alliances.map(a => {
-            const members = [a.captain, a.round1, a.round2, a.round3, a.backup].filter(t => t != null && t > 0);
+            const official = [a.captain, a.round1, a.round2, a.round3, a.backup].filter(t => t != null && t > 0);
+            const members = official.length ? official : (bracket?.rosters?.[a.number] || []);
+            const hasRoles = official.length > 0;
             const ours = members.some(t => t == TEAM_NUMBER);
             return `
               <div class="po-alliance ${ours ? 'po-ours' : ''}">
                 <div class="po-alliance-num">A${a.number}</div>
                 <div class="po-alliance-members">
-                  ${members.map((t, i) => `
+                  ${members.length ? members.map((t, i) => `
                     <div class="po-member ${t == TEAM_NUMBER ? 'our' : ''}" onclick="openTeamModal(${t})">
                       <span class="po-member-num">${t}</span>
                       <span class="po-member-name">${escHtml(window._teamNames?.[t] || '')}</span>
-                      <span class="po-member-role">${i === 0 ? 'Captain' : 'Pick ' + i}</span>
-                    </div>`).join('')}
+                      ${hasRoles ? `<span class="po-member-role">${i === 0 ? 'Captain' : 'Pick ' + i}</span>` : ''}
+                    </div>`).join('')
+                  : '<div class="po-member"><span class="po-member-name">TBD</span></div>'}
                 </div>
               </div>`;
           }).join('')}
@@ -358,10 +407,9 @@ async function playoffs() {
   }
 
   // ── Bracket (preferred) or grouped list fallback ──
-  const bracketHtml = buildBracketHtml(matches, alliances);
   let bodyHtml;
-  if (bracketHtml) {
-    bodyHtml = bracketHtml;
+  if (bracket) {
+    bodyHtml = bracket.html;
   } else if (matches.length) {
     const rounds = groupPlayoffRounds(matches);
     bodyHtml = rounds.map(round => `
@@ -379,7 +427,7 @@ async function playoffs() {
       <div class="page-title" style="margin-bottom:0">Playoffs</div>
       <button class="icon-btn" onclick="playoffs()" title="Reload">↻</button>
     </div>
-    <div style="font-size:.73rem;font-family:var(--mono);color:var(--text2);margin-bottom:.75rem">${escHtml(appSettings.active_event_name || '')} · double elimination</div>
+    <div style="font-size:.73rem;font-family:var(--mono);color:var(--text2);margin-bottom:.75rem">${escHtml(appSettings.active_event_name || '')} · ${alliances.length === 2 ? 'finals — best of 3' : 'double elimination'}</div>
     ${allianceHtml}
     ${bodyHtml}
   `);
