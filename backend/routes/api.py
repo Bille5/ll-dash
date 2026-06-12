@@ -1,9 +1,10 @@
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, session
 from backend.extensions import db
 from backend.models.models import AppSettings, ScoutingNote, AllianceFlag, TeamNote, Checklist
 from backend.routes.auth import require_auth
-from backend.services import ftc_api
+from backend.services import config, ftc_api
 import json
+import re
 
 api_bp = Blueprint('api', __name__)
 
@@ -17,24 +18,142 @@ def _event():
     return AppSettings.get('active_event_code')
 
 
+# ── Public config (PIN gate / setup wizard / theming) ─────────
+@api_bp.route('/config', methods=['GET'])
+def get_config():
+    b = config.branding()
+    return jsonify({
+        'needs_setup':    config.needs_setup(),
+        'dashboard_name': b['name'],
+        'theme':          b['theme'],
+        'team_number':    b['team_number'],
+    })
+
+
+# ── Setup wizard ──────────────────────────────────────────────
+def _setup_allowed():
+    return config.needs_setup() or session.get('authenticated')
+
+@api_bp.route('/setup/validate', methods=['POST'])
+def setup_validate():
+    if not _setup_allowed():
+        return jsonify({'error': 'Unauthorized'}), 401
+    d = request.get_json() or {}
+    return jsonify(ftc_api.validate_credentials(
+        str(d.get('username', '')).strip(), str(d.get('key', '')).strip()))
+
+@api_bp.route('/setup', methods=['POST'])
+def complete_setup():
+    if not _setup_allowed():
+        return jsonify({'error': 'Unauthorized'}), 401
+    d = request.get_json() or {}
+
+    team = str(d.get('team_number', '')).strip()
+    pin  = str(d.get('team_pin', '')).strip()
+    user = str(d.get('ftc_api_username', '')).strip()
+    key  = str(d.get('ftc_api_key', '')).strip()
+    if not team.isdigit():
+        return jsonify({'error': 'Team number must be numeric'}), 400
+    if not re.fullmatch(r'\d{4}', pin):
+        return jsonify({'error': 'PIN must be 4 digits'}), 400
+
+    check = ftc_api.validate_credentials(user, key)
+    if not check.get('valid'):
+        return jsonify({'error': check.get('error', 'FTC API credentials are invalid')}), 400
+
+    AppSettings.set('team_number', team)
+    AppSettings.set('team_pin', pin)
+    AppSettings.set('ftc_api_username', user)
+    AppSettings.set('ftc_api_key', key)
+
+    name = str(d.get('dashboard_name', '')).strip()[:48]
+    AppSettings.set('dashboard_name', name or config.DEFAULT_DASHBOARD_NAME)
+    for tkey in ('theme_accent', 'theme_accent2', 'theme_bg'):
+        v = str(d.get(tkey, '')).strip()
+        if re.fullmatch(r'#[0-9a-fA-F]{6}', v):
+            AppSettings.set(tkey, v)
+
+    season = d.get('active_season') or check.get('currentSeason')
+    if season:
+        AppSettings.set('active_season', season)
+    event_code = str(d.get('active_event_code', '')).strip().upper()
+    if event_code:
+        AppSettings.set('active_event_code', event_code)
+        AppSettings.set('active_event_name', str(d.get('active_event_name', '')).strip() or event_code)
+
+    AppSettings.set('setup_complete', '1')
+    session['authenticated'] = True  # they just chose the PIN — log them in
+    session.permanent = True
+    return jsonify({'success': True})
+
+
 # ── Settings ──────────────────────────────────────────────────
 @api_bp.route('/settings', methods=['GET'])
 def get_settings():
+    username, api_key = config.ftc_credentials()
     return jsonify({
         'active_event_code': AppSettings.get('active_event_code'),
         'active_event_name': AppSettings.get('active_event_name'),
         'active_season':     _season(),
-        'team_number':       current_app.config.get('TEAM_NUMBER', '3650'),
+        'team_number':       config.team_number(),
+        'dashboard_name':    config.dashboard_name(),
+        'theme':             config.theme(),
+        'ftc_api_username':  username,
+        'has_credentials':   bool(username and api_key),
     })
 
 @api_bp.route('/settings', methods=['POST'])
 @require_auth
 def update_settings():
     data = request.get_json() or {}
-    for key in ('active_event_code', 'active_event_name', 'active_season'):
+    simple_keys = ('active_event_code', 'active_event_name', 'active_season',
+                   'dashboard_name', 'team_number',
+                   'ftc_api_username', 'ftc_api_key')
+    for key in simple_keys:
         if key in data and data[key] is not None:
-            AppSettings.set(key, data[key])
+            AppSettings.set(key, str(data[key]).strip())
+    for key in ('theme_accent', 'theme_accent2', 'theme_bg'):
+        v = data.get(key)
+        if v is not None:
+            if not re.fullmatch(r'#[0-9a-fA-F]{6}', str(v).strip()):
+                return jsonify({'error': f'{key} must be a hex color like #e8ff47'}), 400
+            AppSettings.set(key, str(v).strip())
+    if data.get('team_pin') is not None:
+        pin = str(data['team_pin']).strip()
+        if not re.fullmatch(r'\d{4}', pin):
+            return jsonify({'error': 'PIN must be 4 digits'}), 400
+        AppSettings.set('team_pin', pin)
     return jsonify({'success': True})
+
+
+# ── Scouting field schema ─────────────────────────────────────
+@api_bp.route('/scouting-fields', methods=['GET'])
+def get_scouting_fields():
+    return jsonify(config.scouting_fields())
+
+@api_bp.route('/scouting-fields', methods=['POST'])
+@require_auth
+def set_scouting_fields():
+    fields, err = config.validate_scouting_fields(request.get_json())
+    if err:
+        return jsonify({'error': err}), 400
+    AppSettings.set('scouting_fields', json.dumps(fields))
+    return jsonify(fields)
+
+
+# ── Flag categories ───────────────────────────────────────────
+@api_bp.route('/flag-categories', methods=['GET'])
+def get_flag_categories():
+    return jsonify(config.flag_categories())
+
+@api_bp.route('/flag-categories', methods=['POST'])
+@require_auth
+def set_flag_categories():
+    cats, err = config.validate_flag_categories(request.get_json())
+    if err:
+        return jsonify({'error': err}), 400
+    AppSettings.set('flag_categories', json.dumps(cats))
+    return jsonify(cats)
 
 
 # ── Seasons / Events ──────────────────────────────────────────
@@ -234,11 +353,15 @@ def set_flag(team_number):
     d      = request.get_json() or {}
     season = int(d.get('season', _season()))
     event  = d.get('event_code', _event())
+    flag   = d.get('flag', 'neutral')
+    allowed = {'neutral'} | {c['key'] for c in config.flag_categories()}
+    if flag not in allowed:
+        return jsonify({'error': f'Unknown flag category: {flag}'}), 400
     f = AllianceFlag.query.filter_by(season=season, event_code=event, team_number=team_number).first()
     if not f:
         f = AllianceFlag(season=season, event_code=event, team_number=team_number)
         db.session.add(f)
-    f.flag       = d.get('flag', 'neutral')
+    f.flag       = flag
     f.pick_order = d.get('pick_order')
     db.session.commit()
     return jsonify(f.to_dict())

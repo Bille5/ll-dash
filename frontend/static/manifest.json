@@ -1,7 +1,7 @@
 {
-  "name": "LL Dash",
-  "short_name": "LL Dash",
-  "description": "FTC Competition Dashboard — Team 3650 Limited Liability",
+  "name": "FTC Dash",
+  "short_name": "FTC Dash",
+  "description": "FTC Competition Dashboard",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0a0f",

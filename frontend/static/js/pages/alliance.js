@@ -10,6 +10,7 @@ async function alliance() {
     API.getFlags().catch(()=>({})),
     API.ftcscoutEventOprs(appSettings.active_event_code, season).catch(()=>null),
   ]);
+  if (currentPage !== 'alliance') return;  // stale fetch — user navigated away
 
   const rankings = rankData?.rankings || rankData?.Rankings || [];
   const schedule = schedData?.schedule || [];
@@ -90,22 +91,22 @@ async function alliance() {
 }
 
 function renderPickList(teams) {
-  const us      = teams.filter(t=>t.num==TEAM_NUMBER);
-  const targets = teams.filter(t=>t.flag==='target'&&t.num!=TEAM_NUMBER);
-  const neutral = teams.filter(t=>t.flag==='neutral'&&t.num!=TEAM_NUMBER);
-  const dnp     = teams.filter(t=>t.flag==='dnp'   &&t.num!=TEAM_NUMBER);
+  const cats = flagCats();
+  const us   = teams.filter(t=>t.num==TEAM_NUMBER);
+  const byCat = {};
+  cats.forEach(c=>{ byCat[c.key] = teams.filter(t=>t.flag===c.key && t.num!=TEAM_NUMBER); });
+  const unflagged = teams.filter(t=>t.num!=TEAM_NUMBER && !cats.some(c=>c.key===t.flag));
 
   const teamRow = t => {
-    const icon = t.flag==='target'?'🎯':t.flag==='dnp'?'🚫':'';
+    const cat  = flagCat(t.flag);
+    const icon = cat ? flagIcon(cat) : '';
     let notePreview = '';
     if (t.notesList && t.notesList.length) {
       const latest = t.notesList[0];
       const s = parseScoutNotes(latest);
-      const parts = [];
-      if (s.auto)   parts.push(`Auto: ${escHtml(s.auto)}`);
-      if (s.teleop) parts.push(`Teleop: ${escHtml(s.teleop)}`);
-      if (s.park)   parts.push(`Park: ${escHtml(s.park)}`);
-      if (s.other)  parts.push(escHtml(s.other));
+      const parts = Object.entries(s)
+        .filter(([k,v]) => v != null && v !== '' && !LEGACY_SCOUT_KEYS.includes(k))
+        .map(([k,v]) => `${escHtml(scoutFieldLabel(k))}: ${escHtml(String(v))}`);
       if (!parts.length && latest.notes) parts.push(escHtml(latest.notes));
       if (parts.length) {
         const preview = parts.join(' · ');
@@ -123,17 +124,18 @@ function renderPickList(teams) {
           ${notePreview}
         </div>
         <div style="display:flex;gap:.3rem;flex-direction:column;align-items:flex-end;flex-shrink:0">
-          <button class="flag-btn target btn-sm ${t.flag==='target'?'active':''}" data-flag="target" data-team="${t.num}" style="flex:unset;padding:.2rem .4rem" onclick="event.stopPropagation()">🎯</button>
-          <button class="flag-btn dnp btn-sm ${t.flag==='dnp'?'active':''}" data-flag="dnp" data-team="${t.num}" style="flex:unset;padding:.2rem .4rem" onclick="event.stopPropagation()">🚫</button>
+          ${cats.map(c=>flagBtnHtml(c, t.flag===c.key, t.num, true)).join('')}
         </div>
       </div>`;
   };
 
   let html = '';
-  if (us.length)      html += `<div class="section-label" style="color:var(--accent)">Your Team</div>${us.map(teamRow).join('')}`;
-  if (targets.length) html += `<div class="section-label" style="color:var(--green);margin-top:.75rem">🎯 Targets (${targets.length})</div>${targets.map(teamRow).join('')}`;
-  html += `<div class="section-label" style="margin-top:.75rem">All Teams — tap to view profile</div>${neutral.map(teamRow).join('')}`;
-  if (dnp.length)     html += `<div class="section-label" style="color:var(--red);margin-top:.75rem">🚫 Do Not Pick (${dnp.length})</div>${dnp.map(teamRow).join('')}`;
+  if (us.length) html += `<div class="section-label" style="color:var(--accent)">Your Team</div>${us.map(teamRow).join('')}`;
+  cats.forEach(c=>{
+    const list = byCat[c.key];
+    if (list.length) html += `<div class="section-label" style="color:${c.color};margin-top:.75rem">${flagIcon(c)} ${escHtml(c.label)} (${list.length})</div>${list.map(teamRow).join('')}`;
+  });
+  html += `<div class="section-label" style="margin-top:.75rem">All Teams — tap to view profile</div>${unflagged.map(teamRow).join('')}`;
 
   document.getElementById('alliance-content').innerHTML = html;
 
@@ -220,7 +222,10 @@ function renderCompare(teams) {
       if (t.notesList && t.notesList.length) {
         const latest = t.notesList[0];
         const s = parseScoutNotes(latest);
-        const parts = [s.auto&&`A:${escHtml(s.auto)}`, s.teleop&&`T:${escHtml(s.teleop)}`, s.park&&`P:${escHtml(s.park)}`].filter(Boolean);
+        const parts = Object.entries(s)
+          .filter(([k,v]) => v != null && v !== '' && !LEGACY_SCOUT_KEYS.includes(k))
+          .slice(0,3)
+          .map(([k,v]) => `${escHtml(scoutFieldLabel(k))}: ${escHtml(String(v))}`);
         if (parts.length) scoutSummary = `<div style="font-size:.58rem;color:var(--text2);margin-top:.3rem;white-space:pre-wrap;text-align:left">${parts.join('\n').slice(0,80)}</div>`;
       }
       return `
@@ -238,9 +243,8 @@ function renderCompare(teams) {
           <div class="compare-stat"><div class="compare-stat-val" style="color:${highlight(t.oprEndgame,'oprEndgame')}">${t.oprEndgame!=null?t.oprEndgame.toFixed(1):'--'}</div><div class="compare-stat-lbl">OPR Endgame</div></div>
           <div class="compare-stat"><div class="compare-stat-val">${t.notes}</div><div class="compare-stat-lbl">Scout Notes</div></div>
           ${scoutSummary}
-          <div class="flag-row" style="margin-top:.75rem">
-            <button class="flag-btn target btn-sm ${t.flag==='target'?'active':''}" data-flag="target" data-team="${t.num}" onclick="event.stopPropagation()">🎯</button>
-            <button class="flag-btn dnp btn-sm ${t.flag==='dnp'?'active':''}" data-flag="dnp" data-team="${t.num}" onclick="event.stopPropagation()">🚫</button>
+          <div class="flag-row" style="margin-top:.75rem;flex-wrap:wrap;justify-content:center">
+            ${flagCats().map(c=>flagBtnHtml(c, t.flag===c.key, t.num, true)).join('')}
           </div>
         </div>`;
     }).join('');

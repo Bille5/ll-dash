@@ -6,8 +6,8 @@ import json
 class AppSettings(db.Model):
     __tablename__ = 'app_settings'
     id    = db.Column(db.Integer, primary_key=True)
-    key   = db.Column(db.String(64),  unique=True, nullable=False)
-    value = db.Column(db.String(512), nullable=True)
+    key   = db.Column(db.String(64), unique=True, nullable=False)
+    value = db.Column(db.Text, nullable=True)
 
     @staticmethod
     def get(key, default=None):
@@ -61,7 +61,7 @@ class AllianceFlag(db.Model):
     season       = db.Column(db.Integer, nullable=False)
     event_code   = db.Column(db.String(32), nullable=False)
     team_number  = db.Column(db.Integer, nullable=False)
-    flag         = db.Column(db.String(16), default='neutral')
+    flag         = db.Column(db.String(32), default='neutral')
     pick_order   = db.Column(db.Integer, nullable=True)
     __table_args__ = (
         db.UniqueConstraint('season', 'event_code', 'team_number', name='uq_flag'),
